@@ -1,0 +1,17 @@
+{
+  "name": "@mp3/common",
+  "version": "1.0.0",
+  "description": "MP3 앱의 공용 타입 및 유틸리티",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "tsc"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}
