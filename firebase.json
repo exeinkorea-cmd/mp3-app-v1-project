@@ -2,8 +2,11 @@
   "functions": {
     "source": "packages/functions"
   },
+  "firestore": {
+    "rules": "firestore.rules"
+  },
   "hosting": {
-    "public": "build",
+    "public": "packages/web-cms/build",
     "ignore": ["firebase.json", "**/.*", "**/node_modules/**"],
     "rewrites": [
       {

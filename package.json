@@ -2,7 +2,7 @@
   "name": "mp3-app-v1-project",
   "version": "1.0.0",
   "description": "",
-  "main": "index.js",
+  "main": "packages/mobile-user/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "//--- 1인 개발(나 혼자 해내야해)을 위한 '마스터 컨트롤' 스크립트 ---//": "",
@@ -27,5 +27,27 @@
   "license": "ISC",
   "workspaces": [
     "packages/*"
-  ]
+  ],
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "ajv": "^8.17.1",
+    "expo": "~54.0.23",
+    "expo-camera": "^17.0.9",
+    "expo-checkbox": "^5.0.7",
+    "expo-dev-client": "~6.0.18",
+    "expo-image-manipulator": "^14.0.7",
+    "expo-location": "^19.0.7",
+    "expo-media-library": "^18.2.0",
+    "expo-status-bar": "~3.0.8",
+    "expo-updates": "~29.0.12",
+    "react-native-photo-manipulator": "^1.7.2",
+    "react-native-view-shot": "4.0.3"
+  },
+  "devDependencies": {
+    "typescript": "^5.3.3"
+  },
+  "overrides": {
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  }
 }
