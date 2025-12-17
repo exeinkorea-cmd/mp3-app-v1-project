@@ -72,6 +72,10 @@ packages/mobiles/app.json
 packages/mobiles/app.json.local
 packages/web-cms/.env.local
 
+# Backup folders (contain sensitive data)
+backup_*/
+backups/
+
 # dataconnect generated files
 .dataconnect
 
