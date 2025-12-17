@@ -1,0 +1,12 @@
+{
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "12ab09de-22e4-4bd3-ba02-99198c99a88d"
+      }
+    },
+    "android": {
+      "package": "com.himill.webcms"
+    }
+  }
+}

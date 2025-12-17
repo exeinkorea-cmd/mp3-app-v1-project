@@ -1,0 +1,538 @@
+/* 디자인 토큰 및 전역 스타일 */
+
+/* 타이포그래피 스케일 - Data-Dense 버전 */
+h1 {
+  font-size: 1.5rem; /* 24px */
+  font-weight: 600; /* semibold */
+  color: var(--text-primary, #030213);
+  line-height: 1.2; /* Data-Dense: 1.5 → 1.2 */
+  letter-spacing: -0.02em;
+  margin: 0; /* Reset */
+}
+
+h2 {
+  font-size: 1.25rem; /* 20px */
+  font-weight: 500; /* medium */
+  color: var(--text-primary, #030213);
+  line-height: 1.2; /* Data-Dense: 1.5 → 1.2 */
+  letter-spacing: -0.02em;
+  margin: 0; /* Reset */
+}
+
+h3 {
+  font-size: 1.125rem; /* 18px */
+  font-weight: 500; /* medium */
+  color: var(--text-primary, #030213);
+  line-height: 1.2; /* Data-Dense: 1.5 → 1.2 */
+  letter-spacing: -0.02em;
+  margin: 0; /* Reset */
+}
+
+h4,
+h5,
+h6 {
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  color: var(--text-primary, #030213);
+  margin: 0; /* Reset */
+}
+
+/* 기본 텍스트 - Data-Dense */
+p {
+  font-size: 0.875rem; /* 14px */
+  font-weight: 400; /* normal */
+  line-height: 1.4; /* Data-Dense: 1.5 → 1.4 */
+  letter-spacing: -0.02em;
+  color: var(--text-primary, #030213);
+  margin: 0; /* Reset */
+}
+
+/* 작은 텍스트 */
+.text-small {
+  font-size: 0.875rem; /* 14px */
+  line-height: 1.4;
+  letter-spacing: -0.02em;
+}
+
+/* 유틸리티 클래스 */
+.flex {
+  display: flex;
+}
+
+.flex-col {
+  flex-direction: column;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.justify-center {
+  justify-content: center;
+}
+
+.justify-between {
+  justify-content: space-between;
+}
+
+.gap-2 {
+  gap: 0.5rem; /* 8px */
+}
+
+.gap-4 {
+  gap: 1rem; /* 16px */
+}
+
+.gap-6 {
+  gap: 1.5rem; /* 24px */
+}
+
+.w-full {
+  width: 100%;
+}
+
+.max-w-md {
+  max-width: 28rem; /* 448px */
+}
+
+.max-w-2xl {
+  max-width: 42rem; /* 672px */
+}
+
+.max-w-4xl {
+  max-width: 56rem; /* 896px */
+}
+
+.p-2 {
+  padding: 0.5rem; /* 8px */
+}
+
+.p-3 {
+  padding: 0.75rem; /* 12px */
+}
+
+.p-6 {
+  padding: 1.5rem; /* 24px */
+}
+
+.px-3 {
+  padding-left: 0.75rem;
+  padding-right: 0.75rem;
+}
+
+.px-6 {
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+}
+
+.py-2 {
+  padding-top: 0.5rem;
+  padding-bottom: 0.5rem;
+}
+
+.mb-2 {
+  margin-bottom: 0.5rem;
+}
+
+.mb-3 {
+  margin-bottom: 0.75rem;
+}
+
+.mb-4 {
+  margin-bottom: 1rem;
+}
+
+.mb-6 {
+  margin-bottom: 1.5rem;
+}
+
+.mt-2 {
+  margin-top: 0.5rem;
+}
+
+.mt-4 {
+  margin-top: 1rem;
+}
+
+.h-10 {
+  height: 2.5rem; /* 40px */
+}
+
+.h-16 {
+  height: 4rem; /* 64px */
+}
+
+.h-screen {
+  height: 100vh;
+}
+
+.rounded {
+  border-radius: var(--radius);
+}
+
+.rounded-md {
+  border-radius: var(--radius-md);
+}
+
+.rounded-lg {
+  border-radius: var(--radius-lg);
+}
+
+.rounded-full {
+  border-radius: 9999px;
+}
+
+.border {
+  border-width: 1px;
+  border-color: var(--border);
+}
+
+.border-b {
+  border-bottom-width: 1px;
+  border-bottom-color: var(--gray-200);
+}
+
+.bg-white {
+  background-color: var(--background);
+}
+
+.bg-gray-100 {
+  background-color: var(--gray-100);
+}
+
+.bg-gray-200 {
+  background-color: var(--gray-200);
+}
+
+.bg-primary {
+  background-color: var(--primary);
+}
+
+.bg-secondary {
+  background-color: var(--secondary);
+}
+
+.bg-input-background {
+  background-color: var(--input-background);
+}
+
+.bg-muted {
+  background-color: var(--muted);
+}
+
+.text-white {
+  color: #ffffff;
+}
+
+.text-gray-500 {
+  color: var(--gray-500);
+}
+
+.text-gray-600 {
+  color: var(--gray-600);
+}
+
+.text-gray-700 {
+  color: var(--gray-700);
+}
+
+.text-gray-800 {
+  color: var(--gray-800);
+}
+
+.text-gray-900 {
+  color: var(--gray-900);
+}
+
+.text-primary-foreground {
+  color: var(--primary-foreground);
+}
+
+.text-secondary-foreground {
+  color: var(--secondary-foreground);
+}
+
+.text-muted-foreground {
+  color: var(--muted-foreground);
+}
+
+.text-destructive {
+  color: var(--destructive);
+}
+
+.text-green-600 {
+  color: #16a34a;
+}
+
+.text-blue-600 {
+  color: #2563eb;
+}
+
+.text-orange-600 {
+  color: #ea580c;
+}
+
+.text-sm {
+  font-size: 0.875rem; /* 14px */
+}
+
+.text-xs {
+  font-size: 0.75rem; /* 12px */
+}
+
+.text-lg {
+  font-size: 1.125rem; /* 18px */
+}
+
+.text-xl {
+  font-size: 1.25rem; /* 20px */
+}
+
+.text-2xl {
+  font-size: 1.5rem; /* 24px */
+}
+
+.font-medium {
+  font-weight: 500;
+}
+
+.font-semibold {
+  font-weight: 600;
+}
+
+.font-normal {
+  font-weight: 400;
+}
+
+.shadow-sm {
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+}
+
+.transition-colors {
+  transition-property: color, background-color, border-color;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+.transition-opacity {
+  transition-property: opacity;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+  transition-duration: 150ms;
+}
+
+.hover\:opacity-90:hover {
+  opacity: 0.9;
+}
+
+.hover\:bg-gray-100:hover {
+  background-color: var(--gray-100);
+}
+
+.hover\:bg-gray-300:hover {
+  background-color: var(--gray-300);
+}
+
+.hover\:text-gray-600:hover {
+  color: var(--gray-600);
+}
+
+.focus\:outline-none:focus {
+  outline: 2px solid transparent;
+  outline-offset: 2px;
+}
+
+.focus\:ring-2:focus {
+  box-shadow: 0 0 0 2px var(--primary);
+}
+
+.focus\:border-transparent:focus {
+  border-color: transparent;
+}
+
+.disabled\:opacity-50:disabled {
+  opacity: 0.5;
+}
+
+.disabled\:cursor-not-allowed:disabled {
+  cursor: not-allowed;
+}
+
+.space-y-2 > * + * {
+  margin-top: 0.5rem;
+}
+
+.overflow-y-auto {
+  overflow-y: auto;
+}
+
+.max-h-\[500px\] {
+  max-height: 500px;
+}
+
+.italic {
+  font-style: italic;
+}
+
+.resize-none {
+  resize: none;
+}
+
+/* 추가 유틸리티 클래스 */
+.block {
+  display: block;
+}
+
+.flex-1 {
+  flex: 1 1 0%;
+}
+
+.min-h-full {
+  min-height: 100%;
+}
+
+.w-5 {
+  width: 1.25rem; /* 20px */
+}
+
+.h-5 {
+  height: 1.25rem; /* 20px */
+}
+
+.border-gray-200 {
+  border-color: var(--gray-200);
+}
+
+.bg-green-600 {
+  background-color: #16a34a;
+}
+
+.bg-gray-500 {
+  background-color: var(--gray-500);
+}
+
+.text-gray-700 {
+  color: var(--gray-700);
+}
+
+.text-gray-400 {
+  color: var(--gray-400);
+}
+
+.bg-gray-300 {
+  background-color: #d1d5db;
+}
+
+/* 테이블 스타일 */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  border-right: 1px solid var(--gray-200);
+}
+
+th:last-child,
+td:last-child {
+  border-right: none;
+}
+
+/* 배지 스타일 */
+.bg-green-100 {
+  background-color: #dcfce7;
+}
+
+.text-green-800 {
+  color: #166534;
+}
+
+.bg-red-100 {
+  background-color: #fee2e2;
+}
+
+.text-red-800 {
+  color: #991b1b;
+}
+
+/* 추가 유틸리티 */
+.p-4 {
+  padding: 1rem;
+}
+
+.gap-2 {
+  gap: 0.5rem;
+}
+
+.w-4 {
+  width: 1rem;
+}
+
+.h-4 {
+  height: 1rem;
+}
+
+.border-collapse {
+  border-collapse: collapse;
+}
+
+.divide-y > * + * {
+  border-top: 1px solid var(--gray-200);
+}
+
+.hover\:bg-gray-50:hover {
+  background-color: var(--gray-50);
+}
+
+.uppercase {
+  text-transform: uppercase;
+}
+
+.tracking-wider {
+  letter-spacing: 0.05em;
+}
+
+.inline-flex {
+  display: inline-flex;
+}
+
+.px-2 {
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+}
+
+.py-1 {
+  padding-top: 0.25rem;
+  padding-bottom: 0.25rem;
+}
+
+.px-4 {
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+.py-3 {
+  padding-top: 0.75rem;
+  padding-bottom: 0.75rem;
+}
+
+.py-8 {
+  padding-top: 2rem;
+  padding-bottom: 2rem;
+}
+
+.text-xs {
+  font-size: 0.75rem;
+}
+
+.bg-gray-50 {
+  background-color: var(--gray-50);
+}
+
+.border-r {
+  border-right: 1px solid var(--gray-200);
+}
+
+.colSpan-7 {
+  grid-column: span 7 / span 7;
+}

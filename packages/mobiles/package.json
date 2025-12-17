@@ -1,0 +1,30 @@
+{
+  "name": "mobiles",
+  "version": "1.0.0",
+  "main": "index.ts",
+  "scripts": {
+    "start": "expo start --clear",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@mp3/common": "file:../common",
+    "@react-native-async-storage/async-storage": "1.23.1",
+    "expo": "~52.0.48",
+    "expo-constants": "~17.0.8",
+    "expo-location": "~18.0.0",
+    "expo-status-bar": "~2.0.0",
+    "expo-updates": "~0.27.4",
+    "firebase": "^12.5.0",
+    "react": "18.3.1",
+    "react-native": "0.76.5"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0",
+    "@types/react": "~18.3.12",
+    "babel-preset-expo": "~12.0.0",
+    "typescript": "~5.3.3"
+  },
+  "private": true
+}

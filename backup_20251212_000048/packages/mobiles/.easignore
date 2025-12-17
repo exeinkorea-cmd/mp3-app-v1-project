@@ -1,0 +1,23 @@
+# 루트 node_modules 제외 (각 패키지의 node_modules만 사용)
+node_modules/
+package-lock.json
+
+# 다른 패키지들 제외 (mobiles만 빌드)
+# packages/common/ 제외하지 않음 (@mp3/common 의존성 필요)
+# 단, dist 폴더와 package.json은 포함 필요
+packages/common/node_modules/
+packages/common/package-lock.json
+packages/common/tsconfig.json
+packages/common/.npmrc
+packages/common/src/  # src는 제외 (dist만 필요)
+packages/functions/
+packages/web-cms/
+packages/m-users_backup_20251206_211050/
+packages/m-users_backup1204/
+
+# 백업 및 불필요한 파일들
+backups/
+build/
+scripts/
+*.backup
+*.log

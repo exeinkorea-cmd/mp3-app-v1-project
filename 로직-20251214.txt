@@ -1,0 +1,722 @@
+================================================================================
+MP3 앱 프로젝트 전체 로직 및 구조 분석 문서
+작성일: 2025-12-14
+================================================================================
+
+1. 프로젝트 개요
+================================================================================
+
+1.1 프로젝트 구조
+- Monorepo 구조 (npm workspaces 사용)
+- 패키지 구조:
+  * packages/common: 공통 타입 및 디자인 토큰
+  * packages/functions: Firebase Cloud Functions (서버 로직)
+  * packages/mobiles: React Native (Expo) 모바일 앱
+  * packages/web-cms: React 웹 관리자 대시보드
+
+1.2 기술 스택
+- 프론트엔드: React (web-cms), React Native/Expo (mobiles)
+- 백엔드: Firebase Cloud Functions (Node.js/TypeScript)
+- 데이터베이스: Cloud Firestore
+- 인증: Firebase Authentication (익명 인증)
+- 호스팅: Firebase Hosting (web-cms)
+- 번역: Google Cloud Translate API
+- AI: Google Gemini 2.0 Flash (출석 데이터 분석)
+
+
+2. 데이터베이스 구조 (Firestore)
+================================================================================
+
+2.1 컬렉션 목록
+
+[departments]
+- 용도: 소속 정보 (회사/팀) 관리
+- 구조:
+  * id: string (문서 ID)
+  * name: string (회사명 또는 팀명)
+  * type: "company" | "team"
+  * parentId?: string (팀의 경우 소속 회사 ID)
+- 보안 규칙: 모든 사용자 읽기 가능, 로그인 사용자만 쓰기 가능
+
+[authCheckIns]
+- 용도: 출근/퇴근 기록
+- 구조:
+  * id: string (문서 ID)
+  * phoneNumber: string (사용자 식별용, 필수)
+  * userName: string (표시용 이름)
+  * department: string (소속 정보, "회사명 - 팀명" 형식)
+  * timestamp: Timestamp (출근 시간, 필수)
+  * checkOutTime?: Timestamp (퇴근 시간, 없으면 현재 로그인 상태)
+  * location?: { latitude: number, longitude: number } (GPS 위치)
+  * lastCheckoutPrompt?: { timestamp: Timestamp, checkTime: string } (퇴근 확인 알림 기록)
+  * autoCheckout?: boolean (자동 퇴근 여부)
+  * autoCheckoutReason?: string (자동 퇴근 사유)
+  * autoCheckoutAt?: Timestamp (자동 퇴근 시간)
+  * highRiskWork?: string (고위험 작업 정보)
+  * noticeConfirmed?: boolean (공지 확인 여부)
+- 보안 규칙: 로그인 사용자만 읽기/쓰기 가능
+
+[bulletins]
+- 용도: 공지사항 관리
+- 구조:
+  * id: string (문서 ID)
+  * title?: string (제목)
+  * originalText: string (원문 내용)
+  * titleTranslations?: Record<string, string> (제목 번역, 키: 언어코드)
+  * contentTranslations?: Record<string, string> (내용 번역, 키: 언어코드)
+  * createdAt: Timestamp (생성 시간)
+  * targetType?: "all" | "company" | "team" (대상 타입)
+  * targetValue?: string | null (단일 대상 ID, 하위 호환성)
+  * targetValues?: string[] | null (여러 대상 ID 배열)
+  * isPersistent?: boolean (지속 메시지 여부)
+  * expiryDate?: Timestamp (만료일, 지속 메시지용)
+- 보안 규칙: 로그인 사용자만 읽기/쓰기 가능
+
+[emergencyAlerts]
+- 용도: 긴급 알림 (화재 신고 등)
+- 구조:
+  * id: string (문서 ID)
+  * type: string (알림 타입, 예: "fire")
+  * message: string (알림 메시지)
+  * translations?: Record<string, string> (번역)
+  * userName?: string (신고자 이름)
+  * department?: string (신고자 소속)
+  * timestamp: Timestamp (생성 시간)
+- 보안 규칙: 로그인 사용자만 읽기/쓰기 가능
+
+[siteStatusLogs]
+- 용도: 현장 상태 로그 (스케줄 함수에서 생성)
+- 구조:
+  * id: string (문서 ID)
+  * checkTime: string (체크 시간, 예: "16:30")
+  * timestamp: Timestamp (생성 시간)
+  * status: string (상태, 예: "active")
+  * activeUsersCount: number (현장 내부 사용자 수)
+  * activeUsers: string[] (현장 내부 사용자 이름 배열)
+  * message: string (상태 메시지)
+- 보안 규칙: 로그인 사용자만 읽기/쓰기 가능
+
+[checkoutPrompts]
+- 용도: 퇴근 확인 알림 (스케줄 함수에서 생성)
+- 구조:
+  * id: string (문서 ID)
+  * userId: string (사용자 ID)
+  * userName: string (사용자 이름)
+  * timestamp: Timestamp (생성 시간)
+  * message: string (알림 메시지)
+  * status: string (상태, 예: "pending")
+  * checkTime: string (체크 시간)
+- 보안 규칙: 로그인 사용자만 읽기/쓰기 가능
+
+[teamRequests]
+- 용도: 소속 추가 요청 (모바일 앱에서 "기타" 선택 시)
+- 구조:
+  * id: string (문서 ID)
+  * requesterName: string (요청자 이름)
+  * requestedTeamName: string (요청한 팀명)
+  * phoneNumber: string (요청자 전화번호)
+  * status: string (상태, 예: "pending")
+  * timestamp: Timestamp (생성 시간)
+- 보안 규칙: 로그인 사용자만 읽기/쓰기 가능
+
+
+3. 서버 구성 (Firebase Cloud Functions)
+================================================================================
+
+3.1 함수 목록
+
+[testTranslateV2]
+- 타입: HTTP Request (onRequest)
+- 리전: us-central1
+- 용도: 텍스트 번역 (Google Cloud Translate API 사용)
+- 입력: { text: string }
+- 출력: { translatedObject: Record<string, string> }
+- 번역 대상 언어: en, zh, ru, vi
+- CORS: 활성화 (origin: true, credentials: true)
+
+[dailyResetAt4PM]
+- 타입: Scheduled (onSchedule)
+- 스케줄: 매일 오후 8시 (한국시간, UTC 11시)
+- 리전: us-central1
+- 용도: 일일 데이터 초기화
+- 처리 내용:
+  1. authCheckIns 컬렉션의 모든 문서 삭제 (배치 처리, 400개씩)
+  2. 모든 사용자의 Refresh Token 만료 (세션 무효화)
+  3. bulletins 컬렉션 삭제 (지속 메시지 제외, 만료일 체크)
+  4. emergencyAlerts 컬렉션 삭제
+  5. siteStatusLogs 컬렉션 삭제
+  6. checkoutPrompts 컬렉션 삭제
+
+[manualResetData]
+- 타입: Callable (onCall)
+- 리전: us-central1
+- 용도: 관리자용 수동 데이터 초기화
+- 인증: 필수 (request.auth 필요)
+- 처리 내용:
+  1. authCheckIns 컬렉션의 모든 문서 삭제
+  2. bulletins, emergencyAlerts, siteStatusLogs, checkoutPrompts 삭제
+- 출력: { success: boolean, message: string }
+
+[manualRevokeSessions]
+- 타입: Callable (onCall)
+- 리전: us-central1
+- 용도: 전체 사용자 강제 로그아웃
+- 인증: 필수 (request.auth 필요)
+- 처리 내용:
+  1. authCheckIns에서 checkOutTime이 없는 모든 문서 찾기
+  2. 해당 문서들에 checkOutTime 설정 (서버 타임스탬프)
+- 출력: { success: boolean, message: string }
+
+[checkAttendanceStatus1630]
+- 타입: Scheduled (onSchedule)
+- 스케줄: 매일 오후 4시 30분 (한국시간, UTC 7:30)
+- 리전: us-central1
+- 용도: 출석 상태 체크 및 퇴근 알림 발송
+
+[checkAttendanceStatus1700]
+- 타입: Scheduled (onSchedule)
+- 스케줄: 매일 오후 5시 (한국시간, UTC 8:00)
+- 리전: us-central1
+- 용도: 출석 상태 체크 및 퇴근 알림 발송
+
+[checkAttendanceStatus1730]
+- 타입: Scheduled (onSchedule)
+- 스케줄: 매일 오후 5시 30분 (한국시간, UTC 8:30)
+- 리전: us-central1
+- 용도: 출석 상태 체크 및 퇴근 알림 발송
+
+[analyzeAttendanceQuery]
+- 타입: Callable (onCall)
+- 리전: us-central1
+- 용도: 출석 데이터 쿼리 분석 (Gemini 2.0 Flash 사용)
+- 입력: { text: string } (사용자 질문)
+- 출력: {
+    columns: string[],
+    filter: Record<string, string>,
+    sortBy: string,
+    sortOrder: "asc" | "desc",
+    message: string
+  }
+- AI 모델: gemini-2.0-flash-exp
+- 응답 형식: JSON (responseMimeType: "application/json")
+
+3.2 출석 상태 체크 로직 (checkAttendanceStatus 내부 함수)
+
+1. authCheckIns에서 checkOutTime이 없는 모든 문서 조회
+2. 각 사용자에 대해:
+   - 현장 중심 좌표와의 거리 계산 (Haversine 공식)
+   - 현장 중심: 위도 37.536111, 경도 126.833333
+   - 반경: 500km (임시)
+3. 사용자 분류:
+   - 현장 내부: siteInsideUsers (거리 <= 500km)
+   - 현장 외부: siteOutsideUsers (거리 > 500km)
+   - 자동 퇴근 대상: autoCheckoutUsers (현장 외부 + 30분 경과)
+4. 처리:
+   - 현장 내부 사용자: siteStatusLogs에 기록
+   - 현장 외부 사용자: checkoutPrompts에 알림 생성, authCheckIns에 lastCheckoutPrompt 업데이트
+   - 자동 퇴근 대상: authCheckIns에 checkOutTime 설정, autoCheckout 플래그 설정
+
+3.3 서버 초기화 전략
+- Lazy Initialization: 배포 타임아웃 방지를 위해 전역 초기화 제거
+- Firebase Admin: getAppInstance(), getDb(), getAuthInstance() 함수로 필요 시 초기화
+- CORS: 동적 require로 lazy loading
+- GoogleGenerativeAI: 동적 import로 lazy loading
+
+
+4. 모바일 앱 로직 (packages/mobiles)
+================================================================================
+
+4.1 주요 컴포넌트
+
+[SignInForm]
+- 용도: 로그인 화면
+- 기능:
+  1. 이름, 전화번호 입력 (전화번호 자동 포맷팅: 010-1234-5678)
+  2. 소속 선택 (회사 → 팀, "기타" 옵션 포함)
+  3. 개인정보 수집 동의 체크박스
+  4. GPS 위치 확인 (대한민국 범위 체크)
+  5. Firebase 익명 인증
+  6. authCheckIns에 출근 기록 저장
+  7. "기타" 선택 시 teamRequests에 요청 추가
+  8. AsyncStorage에 사용자 정보 저장
+- GPS 범위: 대한민국 전체 (위도 33.0~38.6, 경도 124.5~132.0)
+
+[BulletinList]
+- 용도: 공지사항 목록 표시
+- 기능:
+  1. 실시간 공지사항 수신 (Firestore onSnapshot)
+  2. 언어 선택 (한국어, 중국어, 베트남어, 러시아어)
+  3. 공지사항 필터링 (targetType, targetValue, targetValues 기반)
+  4. 공지사항 확인 체크박스 (GPS 위치 확인 후 체크, 한 번 체크하면 해제 불가)
+  5. 기본 공지사항 표시 (공지사항이 없을 때)
+  6. 헤더 버튼:
+     - 언어 선택 드롭다운
+     - 화재 신고 버튼 (빨간색)
+     - 요청 버튼 (노란색)
+     - 퇴근 버튼 (흰색)
+- 퇴근 처리:
+  1. authCheckIns에서 해당 사용자의 최신 레코드 찾기
+  2. checkOutTime이 없는 레코드에 checkOutTime 설정
+  3. location 필드 삭제 (deleteField())
+  4. Firebase 로그아웃
+  5. AsyncStorage에서 사용자 정보 삭제
+
+4.2 실시간 감시 로직
+
+[onAuthStateChanged]
+- Firebase Auth 상태 변경 감지
+- 로그인 시: AsyncStorage에서 사용자 정보 복원
+- 로그아웃 시: 사용자 정보 초기화
+
+[onIdTokenChanged]
+- 토큰 상태 감시 (강제 로그아웃 감지)
+- 토큰 갱신 실패 시: 자동 로그아웃 처리
+
+[authCheckIns 실시간 감시]
+- 해당 사용자의 authCheckIns 문서 감시
+- checkOutTime이 설정되면 자동 로그아웃 (관리자 강제 퇴근 처리)
+
+4.3 데이터 저장
+- AsyncStorage 키: "@mobile_user" (사용자 정보)
+- AsyncStorage 키: "@checked_bulletins_{phoneNumber}" (공지사항 체크 상태)
+- AsyncStorage 키: "@checked_bulletins_default_{phoneNumber}" (기본 공지사항 체크 상태)
+
+
+5. 웹 CMS 로직 (packages/web-cms)
+================================================================================
+
+5.1 주요 컴포넌트
+
+[App.tsx]
+- 메인 앱 컴포넌트
+- 기능:
+  1. Firebase Auth 상태 관리
+  2. 실시간 긴급 알림 수신 (emergencyAlerts)
+  3. 실시간 소속 추가 요청 알림 (teamRequests)
+  4. 실시간 현장 상태 로그 알림 (siteStatusLogs)
+  5. Toast 알림 시스템
+  6. 수동 데이터 초기화 (주석 처리됨)
+  7. 전체 강제 로그아웃 (manualRevokeSessions 호출)
+
+[SignInForm]
+- 관리자 로그인 화면
+- Firebase 이메일/비밀번호 인증
+
+[BulletinDashboard]
+- 공지사항 작성 및 발송
+- 기능:
+  1. 제목, 내용 입력
+  2. 대상 선택 (전체/회사/팀, 여러 대상 선택 가능)
+  3. 지속 메시지 설정 (isPersistent, expiryDate)
+  4. 자동 번역 (Google Cloud Translate API)
+  5. bulletins 컬렉션에 저장
+- 번역 대상 언어: en, zh, ru, vi
+- 대상 선택 로직:
+  - 전체 발송: targetType = "all"
+  - 회사 선택: targetType = "company", targetValues = [회사ID들]
+  - 팀 선택: targetType = "team", targetValues = [팀ID들]
+  - 회사 선택 시 소속 팀 자동 포함 (중복 방지)
+  - 팀 선택 시 상위 회사가 이미 선택되어 있으면 경고
+
+[AttendanceList]
+- 출석 현황 목록 표시
+- 기능:
+  1. 실시간 출석 데이터 수신 (authCheckIns)
+  2. AI 챗봇을 통한 데이터 필터링/정렬 (Gemini 2.0 Flash)
+  3. 컬럼 선택 (userName, phoneNumber, department, timestamp, checkOutTime, highRiskWork, noticeConfirmed)
+  4. 필터링 (부분 일치 검색)
+  5. 정렬 (컬럼 헤더 클릭)
+  6. CSV 다운로드
+- AI 챗봇:
+  - 프론트엔드에서 직접 Gemini API 호출
+  - 사용자 질문 분석 → columns, filter, sortBy, sortOrder 추출
+  - analyzeAttendanceQuery 함수와 동일한 로직
+
+[StatsCards]
+- 통계 카드 표시
+- 실시간 출석 데이터 기반 통계
+
+[TeamRequestList]
+- 소속 추가 요청 목록
+- teamRequests 컬렉션 실시간 수신
+- 상태 변경 (pending → approved/rejected)
+
+5.2 실시간 데이터 흐름
+- 모든 주요 데이터는 Firestore onSnapshot으로 실시간 수신
+- 변경사항 감지 시 자동 UI 업데이트
+- 초기 로드 플래그로 중복 알림 방지
+
+
+6. 서버-클라이언트 흐름
+================================================================================
+
+6.1 출근 프로세스 (모바일 앱)
+
+1. 사용자 입력 (이름, 전화번호, 소속)
+2. GPS 위치 확인 (대한민국 범위 체크)
+3. Firebase 익명 인증 (signInAnonymously)
+4. authCheckIns에 출근 기록 저장:
+   {
+     phoneNumber: string,
+     userName: string,
+     department: string,
+     timestamp: serverTimestamp(),
+     location: { latitude, longitude }
+   }
+5. "기타" 선택 시 teamRequests에 요청 추가
+6. AsyncStorage에 사용자 정보 저장
+
+6.2 공지사항 발송 프로세스 (웹 CMS)
+
+1. 관리자가 공지사항 작성 (제목, 내용, 대상 선택)
+2. 지속 메시지 설정 (선택사항)
+3. 발송 버튼 클릭
+4. testTranslateV2 함수 호출 (번역)
+5. bulletins 컬렉션에 저장:
+   {
+     title: string,
+     originalText: string,
+     titleTranslations: Record<string, string>,
+     contentTranslations: Record<string, string>,
+     targetType: "all" | "company" | "team",
+     targetValues: string[],
+     isPersistent: boolean,
+     expiryDate: Timestamp,
+     createdAt: serverTimestamp()
+   }
+6. 모바일 앱에서 실시간 수신 (onSnapshot)
+7. 사용자 필터링 (targetType, targetValues 기반)
+8. 선택한 언어로 표시
+
+6.3 퇴근 프로세스 (모바일 앱)
+
+1. 사용자가 퇴근 버튼 클릭
+2. authCheckIns에서 해당 사용자의 최신 레코드 조회
+3. checkOutTime이 없는 레코드에 checkOutTime 설정
+4. location 필드 삭제
+5. Firebase 로그아웃
+6. AsyncStorage에서 사용자 정보 삭제
+
+6.4 자동 퇴근 프로세스 (스케줄 함수)
+
+1. checkAttendanceStatus 함수 실행 (16:30, 17:00, 17:30)
+2. authCheckIns에서 checkOutTime이 없는 모든 문서 조회
+3. 각 사용자의 위치와 현장 중심 좌표 거리 계산
+4. 현장 외부 사용자 중 30분 경과 사용자:
+   - authCheckIns에 checkOutTime 설정
+   - autoCheckout: true
+   - autoCheckoutReason: "현장 외부 30분 경과"
+5. 현장 외부 사용자 (30분 미경과):
+   - checkoutPrompts에 알림 생성
+   - authCheckIns에 lastCheckoutPrompt 업데이트
+6. 모바일 앱에서 authCheckIns 변경 감지
+7. checkOutTime 설정 시 자동 로그아웃
+
+6.5 일일 초기화 프로세스 (스케줄 함수)
+
+1. dailyResetAt4PM 함수 실행 (매일 오후 8시)
+2. authCheckIns 컬렉션의 모든 문서 삭제 (배치 처리)
+3. 모든 사용자의 Refresh Token 만료 (auth.revokeRefreshTokens)
+4. bulletins 컬렉션 삭제 (지속 메시지 제외, 만료일 체크)
+5. emergencyAlerts, siteStatusLogs, checkoutPrompts 삭제
+6. 모바일 앱에서 토큰 만료 감지 → 자동 로그아웃
+
+6.6 강제 로그아웃 프로세스 (웹 CMS)
+
+1. 관리자가 "전체 강제 로그아웃" 버튼 클릭
+2. manualRevokeSessions 함수 호출
+3. authCheckIns에서 checkOutTime이 없는 모든 문서 조회
+4. 해당 문서들에 checkOutTime 설정
+5. 모바일 앱에서 authCheckIns 변경 감지
+6. checkOutTime 설정 시 자동 로그아웃
+
+6.7 AI 챗봇 프로세스 (웹 CMS)
+
+1. 사용자가 출석 데이터에 대한 질문 입력
+2. 프론트엔드에서 Gemini API 직접 호출 (askGeminiForAttendance)
+3. 또는 analyzeAttendanceQuery 함수 호출 (서버 측)
+4. AI가 질문 분석:
+   - 필요한 컬럼 추출 (columns)
+   - 필터 조건 추출 (filter)
+   - 정렬 기준 추출 (sortBy, sortOrder)
+   - 사용자 메시지 생성 (message)
+5. 결과를 AttendanceList에 적용
+6. 필터링 및 정렬된 데이터 표시
+
+
+7. 디자인 시스템
+================================================================================
+
+7.1 공통 패키지 (packages/common)
+
+[디자인 토큰]
+- packages/common/src/designTokens/
+  * index.ts: 공통 디자인 토큰 export
+  * mobile.ts: 모바일 앱용 디자인 토큰
+  * web.ts: 웹 CMS용 디자인 토큰
+
+[타입 정의]
+- packages/common/src/types.ts
+  * BaseDepartment: 소속 기본 타입
+  * UserRole: 사용자 역할 타입 ("User" | "TM" | "CMS")
+
+7.2 모바일 앱 디자인
+
+[색상]
+- 로그인 버튼: iOS #007AFF, Android #2196F3
+- 화재 버튼: #FF0000 (빨간색)
+- 요청 버튼: #FFD600 (노란색)
+- 퇴근 버튼: #FFFFFF (흰색, 테두리 있음)
+- 언어 선택 버튼: #007AFF (파란색)
+- 체크박스: #007AFF (체크 시)
+
+[레이아웃]
+- SafeAreaView 사용 (상단 여백)
+- 중앙 정렬 컨테이너
+- 로고: 200x80 (로그인 화면), 80x32 (하단)
+- 입력 필드: 90% 너비, 40px 높이
+- 버튼: 90% 너비, 44px 높이
+- 공지사항 카드: 최소 높이 120px, 테두리 있음
+
+[폰트]
+- 제목: 24px, bold
+- 본문: 16px, 400
+- 버튼 텍스트: 14px, 500
+- 공지사항 제목: 18px, bold
+- 공지사항 내용: 16px, 400, lineHeight: 24px
+
+7.3 웹 CMS 디자인
+
+[디자인 토큰]
+- packages/web-cms/src/constants/designTokens.ts
+- DesignTokens 객체로 일관된 스타일 관리
+- spacing, colors, typography 등
+
+[레이아웃]
+- 최대 너비: 1400px
+- 패딩: 32px 40px
+- 반응형 디자인 (Tailwind CSS 사용)
+- Toast 알림 시스템
+
+[컴포넌트 스타일]
+- 통계 카드: 그리드 레이아웃
+- 출석 목록: 테이블 형식
+- 공지사항 작성: 폼 형식
+- 드롭다운 메뉴: z-index 1000, 그림자 효과
+
+
+8. 보안 및 권한 관리
+================================================================================
+
+8.1 Firestore 보안 규칙
+
+[departments]
+- 읽기: 모든 사용자 (로그인 전에도 필요)
+- 쓰기: 로그인 사용자만
+
+[기타 모든 컬렉션]
+- 읽기/쓰기: 로그인 사용자만 (request.auth != null)
+
+8.2 인증 방식
+
+[모바일 앱]
+- Firebase 익명 인증 (signInAnonymously)
+- GPS 위치 기반 접근 제어 (대한민국 범위)
+- 토큰 기반 세션 관리
+
+[웹 CMS]
+- Firebase 이메일/비밀번호 인증
+- 관리자 권한 필요 (수동 초기화, 강제 로그아웃 등)
+
+8.3 데이터 접근 제어
+
+[공지사항 필터링]
+- targetType, targetValue, targetValues 기반
+- 모바일 앱에서 클라이언트 측 필터링
+- 사용자 소속 정보와 매칭
+
+[출석 데이터]
+- phoneNumber 기반 사용자 식별
+- 실시간 감시로 강제 퇴근 처리
+
+
+9. 주요 기능 상세
+================================================================================
+
+9.1 다국어 지원
+
+[번역 대상 언어]
+- 한국어 (ko): 원문
+- 영어 (en)
+- 중국어 (zh)
+- 베트남어 (vi)
+- 러시아어 (ru)
+
+[번역 프로세스]
+1. 관리자가 한국어로 공지사항 작성
+2. testTranslateV2 함수 호출
+3. Google Cloud Translate API로 4개 언어 번역
+4. titleTranslations, contentTranslations에 저장
+5. 모바일 앱에서 선택한 언어로 표시
+
+9.2 GPS 기반 기능
+
+[위치 확인]
+- 로그인 시: 대한민국 범위 체크
+- 공지사항 확인 시: 대한민국 범위 체크
+- 출근 기록에 위치 정보 저장
+
+[자동 퇴근]
+- 현장 중심 좌표와의 거리 계산 (Haversine 공식)
+- 현장 외부 30분 경과 시 자동 퇴근 처리
+- 현장 외부 사용자에게 퇴근 확인 알림 발송
+
+9.3 실시간 동기화
+
+[Firestore 실시간 리스너]
+- onSnapshot 사용
+- 문서 추가/수정/삭제 시 즉시 UI 업데이트
+- 초기 로드 플래그로 중복 알림 방지
+
+[토큰 기반 세션 관리]
+- onIdTokenChanged로 토큰 상태 감시
+- 토큰 만료 시 자동 로그아웃
+- 강제 로그아웃 즉시 감지
+
+
+10. 배포 및 빌드
+================================================================================
+
+10.1 빌드 스크립트
+
+[공통 패키지]
+- npm run build -w @mp3/common
+- TypeScript 컴파일 → dist 폴더
+
+[웹 CMS]
+- npm run build -w web-cms
+- React 빌드 → packages/web-cms/build
+
+[Cloud Functions]
+- npm run build -w functions
+- TypeScript 컴파일 → packages/functions/lib
+
+10.2 배포 스크립트
+
+[Firebase Hosting]
+- npm run deploy:hosting
+- web-cms 빌드 → Firebase Hosting 배포
+
+[Cloud Functions]
+- npm run deploy:functions
+- functions 빌드 → Firebase Functions 배포
+
+[전체 배포]
+- npm run deploy:all
+- Hosting + Functions 동시 배포
+
+10.3 에뮬레이터
+
+[로컬 개발]
+- npm run serve:functions
+- Functions 에뮬레이터: localhost:5001
+- Firestore 에뮬레이터: localhost:8080
+- Firebase UI: localhost:4000
+
+[에뮬레이터 연결]
+- 웹 CMS: localhost 감지 시 자동 연결
+- 모바일 앱: 환경 변수로 설정 가능
+
+
+11. 환경 변수 및 설정
+================================================================================
+
+11.1 모바일 앱 (Expo)
+
+[app.config.ts]
+- EXPO_PUBLIC_FIREBASE_API_KEY
+- EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN
+- EXPO_PUBLIC_FIREBASE_PROJECT_ID
+- EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET
+- EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
+- EXPO_PUBLIC_FIREBASE_APP_ID
+- EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID
+- EAS_PROJECT_ID
+
+[우선순위]
+1. app.json의 extra 필드
+2. 환경 변수
+
+11.2 웹 CMS (React)
+
+[.env 파일]
+- REACT_APP_FIREBASE_API_KEY
+- REACT_APP_FIREBASE_AUTH_DOMAIN
+- REACT_APP_FIREBASE_PROJECT_ID
+- REACT_APP_FIREBASE_STORAGE_BUCKET
+- REACT_APP_FIREBASE_MESSAGING_SENDER_ID
+- REACT_APP_FIREBASE_APP_ID
+- REACT_APP_FIREBASE_MEASUREMENT_ID
+
+11.3 Cloud Functions
+
+[환경 변수]
+- GEMINI_API_KEY (Gemini API 키)
+
+[리전]
+- 모든 함수: us-central1
+
+
+12. 개선 사항 및 주의사항
+================================================================================
+
+12.1 현재 주석 처리된 기능
+
+[웹 CMS]
+- 수동 데이터 초기화 (handleManualReset): 주석 처리됨
+- StatsChat 컴포넌트: 주석 처리됨
+
+[모바일 앱]
+- 카메라 기능 (LabelingCamera): 주석 처리됨
+
+12.2 성능 최적화
+
+[서버 측]
+- Lazy Initialization으로 배포 타임아웃 방지
+- 배치 처리로 대량 데이터 삭제 (400개씩)
+
+[클라이언트 측]
+- useMemo로 필터링/정렬 최적화
+- useCallback으로 함수 메모이제이션
+
+12.3 보안 고려사항
+
+[GPS 위치]
+- 클라이언트 측 검증만 수행 (서버 측 검증 없음)
+- 위치 정보는 출근 기록에만 저장, 퇴근 시 삭제
+
+[익명 인증]
+- 사용자 식별은 phoneNumber 기반
+- 토큰 기반 세션 관리로 강제 로그아웃 가능
+
+12.4 확장 가능성
+
+[현장 중심 좌표]
+- 현재 하드코딩 (37.536111, 126.833333)
+- 향후 설정 가능하도록 개선 가능
+
+[반경 설정]
+- 현재 500km (임시)
+- 향후 동적 설정 가능
+
+[AI 챗봇]
+- 프론트엔드와 서버 측 모두 지원
+- 향후 통합 가능
+
+
+================================================================================
+문서 끝
+================================================================================
+
+
+

@@ -1,0 +1,53 @@
+{
+  "expo": {
+    "name": "mobiles",
+    "slug": "mobiles",
+    "version": "1.0.0",
+    "cli": {
+      "appVersionSource": "remote"
+    },
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": false,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.mp3.mobiles"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "edgeToEdgeEnabled": true,
+      "predictiveBackGestureEnabled": false,
+      "package": "com.mp3.mobiles"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "4045de0c-1a46-4b62-a085-63825983f521"
+      },
+      "firebaseApiKey": "AIzaSyBLCZz6rfC7B6j_h4KycsQC6JZLpX7Uj8o",
+      "firebaseAuthDomain": "mp3-app-v1-3cf12.firebaseapp.com",
+      "firebaseProjectId": "mp3-app-v1-3cf12",
+      "firebaseStorageBucket": "mp3-app-v1-3cf12.firebasestorage.app",
+      "firebaseMessagingSenderId": "126659021205",
+      "firebaseAppId": "1:126659021205:web:f26649191329ccf4c44e9c",
+      "firebaseMeasurementId": "G-H2F3ZGY0DN"
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/4045de0c-1a46-4b62-a085-63825983f521"
+    }
+  }
+}
