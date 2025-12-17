@@ -708,17 +708,6 @@ function SignInForm() {
           <Text style={styles.loginButtonText}>출근하기</Text>
         )}
       </TouchableOpacity>
-
-      {/* 저작권 문구 추가 - 하단 중앙 */}
-      <View style={styles.copyrightContainer}>
-        <Text 
-          style={styles.copyrightText}
-          includeFontPadding={false}
-          textAlignVertical="center"
-        >
-          Copyright © 2025 엑스인 세이프티. All rights reserved.
-        </Text>
-      </View>
     </View>
   );
 }
@@ -1685,6 +1674,20 @@ export default function App() {
           <SignInForm />
         )}
       </View>
+      
+      {/* 저작권 문구 - 로그인 화면일 때만 하단에 표시 */}
+      {!user || !mobileUser ? (
+        <View style={styles.copyrightContainer}>
+          <Text 
+            style={styles.copyrightText}
+            includeFontPadding={false}
+            textAlignVertical="center"
+          >
+            Copyright © 2025 엑스인 세이프티. All rights reserved.
+          </Text>
+        </View>
+      ) : null}
+      
       {/* 바텀 영역 - 메인페이지에서만 보이도록 */}
       {user && mobileUser && (
         <View style={styles.bottomContainer}>
@@ -2179,15 +2182,16 @@ const styles = StyleSheet.create({
   copyrightContainer: {
     width: "100%",
     alignItems: "center", // 중앙 정렬
-    paddingHorizontal: 5,
-    paddingTop: 4, // 상단 여백
-    marginTop: 20, // 출근하기 버튼과의 간격
-    marginBottom: 10, // 하단 여백
+    paddingHorizontal: 10,
+    paddingVertical: 10, // 상하 여백
+    position: "absolute", // 절대 위치
+    bottom: 0, // 화면 하단
+    backgroundColor: "#fff", // 배경색
   },
   copyrightText: {
-    fontSize: 16, // versionText와 동일
-    color: "#999999", // versionText와 동일
-    fontWeight: "500", // versionText와 동일
-    lineHeight: 20, // versionText와 동일
+    fontSize: 12, // 한 줄로 보이도록 크기 축소
+    color: "#999999",
+    fontWeight: "500",
+    lineHeight: 16, // fontSize에 맞게 조정
   },
 });
