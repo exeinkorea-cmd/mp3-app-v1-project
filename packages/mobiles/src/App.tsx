@@ -1342,7 +1342,13 @@ function BulletinList({
     <View style={styles.bulletinListContainer}>
       {/* 버전 문구 추가 - 최상단 우측 */}
       <View style={styles.versionContainer}>
-        <Text style={styles.versionText}>엑스인 안전공지 시스템 V1.0</Text>
+        <Text 
+          style={styles.versionText}
+          includeFontPadding={false}
+          textAlignVertical="center"
+        >
+          엑스인 안전공지 시스템 V1.0
+        </Text>
       </View>
 
       {/* 헤더 버튼 4개 */}
@@ -2149,12 +2155,13 @@ const styles = StyleSheet.create({
     width: "100%",
     alignItems: "flex-end", // 우측 정렬
     paddingHorizontal: 5,
+    paddingTop: 4, // 상단 여백 추가
     marginBottom: 10,
   },
   versionText: {
     fontSize: 16, // bottomText와 동일
     color: "#999999", // bottomText와 동일
     fontWeight: "500", // bottomText와 동일
-    lineHeight: 16, // bottomText와 동일
+    lineHeight: 20, // fontSize보다 크게 설정하여 잘림 방지
   },
 });
