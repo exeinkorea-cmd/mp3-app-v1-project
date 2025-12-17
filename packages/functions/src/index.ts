@@ -7,7 +7,7 @@ import { onDocumentCreated } from "firebase-functions/v2/firestore";
 import * as logger from "firebase-functions/logger";
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
-import { FieldValue, WriteBatch } from "firebase-admin/firestore";
+import { FieldValue } from "firebase-admin/firestore";
 // cors는 lazy loading으로 변경 (배포 타임아웃 방지)
 // GoogleGenerativeAI는 lazy loading으로 변경 (배포 타임아웃 방지)
 
@@ -19,7 +19,6 @@ admin.initializeApp();
 
 // 전역 인스턴스 사용 가능 (반드시 initializeApp 이후에 선언)
 const db = admin.firestore();
-const auth = admin.auth();
 
 // ============================================================================
 // 1. Firebase Admin 초기화 완료
@@ -125,94 +124,147 @@ export const testTranslateV2 = onRequest(
 
 /**
  * 일일 초기화 로직 (내부 함수)
+ * - 강제로그아웃 버튼 + 데이터초기화 버튼의 기능을 합친 것과 동일
  */
 async function performDailyReset(): Promise<void> {
   logger.info("일일 초기화 작업 시작");
   // 전역 변수 db, auth 사용
 
   try {
-    // 1. authCheckIns 삭제 및 세션 무효화
+    // ==================================================================
+    // 1단계: authCheckIns 삭제 (강제로그아웃 버튼과 동일)
+    // ==================================================================
     try {
       const checkInsSnapshot = await db.collection("authCheckIns").get();
-      const batches: WriteBatch[] = [];
-      let currentBatch = db.batch();
-      let count = 0;
+      
+      if (!checkInsSnapshot.empty) {
+        const MAX_BATCH_SIZE = 400;
+        const batches: Promise<any>[] = [];
+        let batch = db.batch();
+        let count = 0;
 
-      checkInsSnapshot.docs.forEach((doc, i) => {
-        currentBatch.delete(doc.ref);
-        count++;
-        if (count >= 400 || i === checkInsSnapshot.docs.length - 1) {
-          // 안전하게 400개로 제한
-          batches.push(currentBatch);
-          if (i < checkInsSnapshot.docs.length - 1) {
-            currentBatch = db.batch();
+        for (const doc of checkInsSnapshot.docs) {
+          batch.delete(doc.ref);
+          count++;
+          if (count >= MAX_BATCH_SIZE) {
+            batches.push(batch.commit());
+            batch = db.batch();
             count = 0;
           }
         }
-      });
-      if (batches.length > 0) {
-        await Promise.all(batches.map((b) => b.commit()));
-      }
+        if (count > 0) {
+          batches.push(batch.commit());
+        }
 
-      // 세션 무효화
-      let nextPageToken: string | undefined;
-      do {
-        const listUsers = await auth.listUsers(1000, nextPageToken);
-        await Promise.all(
-          listUsers.users.map((u) =>
-            auth.revokeRefreshTokens(u.uid).catch((e) => logger.error(e))
-          )
-        );
-        nextPageToken = listUsers.pageToken;
-      } while (nextPageToken);
+        if (batches.length > 0) {
+          await Promise.all(batches);
+        }
+        logger.info(`✅ authCheckIns: ${checkInsSnapshot.size}건 삭제 완료`);
+      } else {
+        logger.info("✅ 삭제할 출석 데이터가 없습니다.");
+      }
     } catch (e) {
       logger.error("authCheckIns Reset Error:", e);
     }
 
-    // 2. 공지사항 등 나머지 컬렉션 삭제 (공통 로직으로 처리)
+    // ==================================================================
+    // 2단계: bulletins (공지사항) - 데이터초기화 버튼과 동일한 로직
+    // isPersistent=true인 문서는 보존
+    // ==================================================================
+    try {
+      const bulletinsSnapshot = await db.collection("bulletins").get();
+      if (!bulletinsSnapshot.empty) {
+        const MAX_BATCH_SIZE = 400;
+        const batches: Promise<any>[] = [];
+        let batch = db.batch();
+        let count = 0;
+        let deletedCount = 0;
+        let preservedCount = 0;
+
+        for (const doc of bulletinsSnapshot.docs) {
+          const data = doc.data();
+          // isPersistent가 true인 문서는 보존 (데이터초기화 버튼과 동일)
+          if (data.isPersistent === true) {
+            preservedCount++;
+            continue; // 삭제하지 않음
+          }
+
+          // isPersistent가 false이거나 없는 문서만 삭제
+          batch.delete(doc.ref);
+          count++;
+          deletedCount++;
+
+          if (count >= MAX_BATCH_SIZE) {
+            batches.push(batch.commit());
+            batch = db.batch();
+            count = 0;
+          }
+        }
+
+        // 마지막 배치 처리
+        if (count > 0) {
+          batches.push(batch.commit());
+        }
+
+        if (batches.length > 0) {
+          await Promise.all(batches);
+        }
+
+        logger.info(
+          `✅ bulletins: ${deletedCount}건 삭제, ${preservedCount}건 보존`
+        );
+      }
+    } catch (e) {
+      logger.error("bulletins 삭제 오류:", e);
+    }
+
+    // ==================================================================
+    // 3단계: 전체 삭제 대상 컬렉션들 (데이터초기화 버튼과 동일)
+    // ==================================================================
     const collectionsToDelete = [
-      "bulletins",
       "emergencyAlerts",
-      "siteStatusLogs",
       "checkoutPrompts",
+      "siteStatusLogs",
+      "teamRequests", // 데이터초기화 버튼에 포함되어 있음
     ];
+
     for (const colName of collectionsToDelete) {
       try {
         const snapshot = await db.collection(colName).get();
-        const batches: WriteBatch[] = [];
-        let currentBatch = db.batch();
+        if (snapshot.empty) {
+          logger.info(`${colName}: 삭제할 데이터 없음`);
+          continue;
+        }
+
+        const MAX_BATCH_SIZE = 400;
+        const batches: Promise<any>[] = [];
+        let batch = db.batch();
         let count = 0;
 
-        snapshot.docs.forEach((doc, i) => {
-          // bulletins의 경우 지속 메시지 체크
-          if (colName === "bulletins") {
-            const data = doc.data();
-            if (data.isPersistent && data.expiryDate) {
-              const expiryDate = data.expiryDate.toDate();
-              const now = new Date();
-              if (expiryDate > now) {
-                return; // 지속 메시지이고 만료일이 지나지 않았으면 삭제하지 않음
-              }
-            }
-          }
-
-          currentBatch.delete(doc.ref);
+        for (const doc of snapshot.docs) {
+          batch.delete(doc.ref);
           count++;
-          if (count >= 400 || i === snapshot.docs.length - 1) {
-            batches.push(currentBatch);
-            if (i < snapshot.docs.length - 1) {
-              currentBatch = db.batch();
-              count = 0;
-            }
+
+          if (count >= MAX_BATCH_SIZE) {
+            batches.push(batch.commit());
+            batch = db.batch();
+            count = 0;
           }
-        });
+        }
+
+        // 마지막 배치 처리
+        if (count > 0) {
+          batches.push(batch.commit());
+        }
 
         if (batches.length > 0) {
-          await Promise.all(batches.map((b) => b.commit()));
+          await Promise.all(batches);
         }
-        logger.info(`${colName} 컬렉션 삭제 완료`);
+
+        logger.info(`${colName} 컬렉션 ${snapshot.size}건 삭제 완료`);
       } catch (e) {
         logger.error(`${colName} 삭제 오류:`, e);
+        // 개별 컬렉션 오류는 전체 프로세스를 중단하지 않음
       }
     }
 
@@ -224,16 +276,16 @@ async function performDailyReset(): Promise<void> {
 }
 
 /**
- * 매일 오후 8시 (한국시간)에 실행되는 스케줄 함수
+ * 매일 새벽 1시 (한국시간)에 실행되는 스케줄 함수
  */
-export const dailyResetAt4PM = onSchedule(
+export const dailyResetAt1AM = onSchedule(
   {
-    schedule: "0 11 * * *", // UTC 11시 = 한국시간 오후 8시 (UTC+9)
+    schedule: "0 16 * * *", // UTC 16시 = 한국시간 새벽 1시 (UTC+9)
     timeZone: "Asia/Seoul",
     region: "us-central1",
   },
   async (event) => {
-    logger.info("오후 8시 일일 초기화 작업 시작");
+    logger.info("새벽 1시 일일 초기화 작업 시작");
     await performDailyReset();
   }
 );
