@@ -708,6 +708,17 @@ function SignInForm() {
           <Text style={styles.loginButtonText}>출근하기</Text>
         )}
       </TouchableOpacity>
+
+      {/* 저작권 문구 추가 - 하단 중앙 */}
+      <View style={styles.copyrightContainer}>
+        <Text 
+          style={styles.copyrightText}
+          includeFontPadding={false}
+          textAlignVertical="center"
+        >
+          Copyright © 2025 엑스인 세이프티. All rights reserved.
+        </Text>
+      </View>
     </View>
   );
 }
@@ -2163,5 +2174,20 @@ const styles = StyleSheet.create({
     color: "#999999", // bottomText와 동일
     fontWeight: "500", // bottomText와 동일
     lineHeight: 20, // fontSize보다 크게 설정하여 잘림 방지
+  },
+  // 저작권 문구 스타일
+  copyrightContainer: {
+    width: "100%",
+    alignItems: "center", // 중앙 정렬
+    paddingHorizontal: 5,
+    paddingTop: 4, // 상단 여백
+    marginTop: 20, // 출근하기 버튼과의 간격
+    marginBottom: 10, // 하단 여백
+  },
+  copyrightText: {
+    fontSize: 16, // versionText와 동일
+    color: "#999999", // versionText와 동일
+    fontWeight: "500", // versionText와 동일
+    lineHeight: 20, // versionText와 동일
   },
 });
