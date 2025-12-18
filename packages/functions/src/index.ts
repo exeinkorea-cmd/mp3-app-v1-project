@@ -136,7 +136,7 @@ async function performDailyReset(): Promise<void> {
     // ==================================================================
     try {
       const checkInsSnapshot = await db.collection("authCheckIns").get();
-      
+
       if (!checkInsSnapshot.empty) {
         const MAX_BATCH_SIZE = 400;
         const batches: Promise<any>[] = [];

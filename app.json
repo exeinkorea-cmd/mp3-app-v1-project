@@ -7,6 +7,13 @@
     },
     "android": {
       "package": "com.himill.mp3appv1project"
-    }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/1e05686e-e145-41d9-94d1-2d1f87b88da1"
+    },
+    "ios": {}
   }
 }

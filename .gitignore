@@ -83,3 +83,5 @@ packages/m-users*
 
 # Expo
 .expo/
+packages/mobiles/android/
+packages/mobiles/ios/
