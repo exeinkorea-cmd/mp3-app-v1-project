@@ -14,34 +14,95 @@
  *
  * 또는 .env 파일을 사용할 수 있습니다.
  */
-import { ExpoConfig, ConfigContext } from 'expo/config';
-import { withGradleProperties } from 'expo/config-plugins';
+import { ExpoConfig, ConfigContext } from "expo/config";
+import { withGradleProperties, withDangerousMod } from "expo/config-plugins";
+import * as fs from "fs";
+import * as path from "path";
 
 // -----------------------------------------------------------------------------
-// [핵심] Kotlin 버전을 강제로 1.9.25로 고정하는 커스텀 플러그인 함수
+// [핵심 1] gradle.properties에 kotlinVersion 추가
 // -----------------------------------------------------------------------------
-const withForcedKotlinVersion = (config: ExpoConfig) => {
+const withForcedKotlinVersionInProperties = (config: ExpoConfig) => {
   return withGradleProperties(config, (config) => {
-    const key = 'kotlinVersion';
-    const value = '1.9.25'; // ★ 우리가 원하는 바로 그 버전!
+    const key = "kotlinVersion";
+    const value = "1.9.25";
 
-    // 1. 기존에 kotlinVersion 설정이 있다면 삭제합니다.
+    // 기존 kotlinVersion 설정 삭제
     config.modResults = config.modResults.filter((item) => {
-      if (item.type === 'property' && item.key === key) {
+      if (item.type === "property" && item.key === key) {
         return false;
       }
       return true;
     });
 
-    // 2. 새로운 버전을 추가합니다.
+    // 새로운 버전 추가
     config.modResults.push({
-      type: 'property',
+      type: "property",
       key,
       value,
     });
 
     return config;
   });
+};
+
+// -----------------------------------------------------------------------------
+// [핵심 2] build.gradle에서 kotlin-gradle-plugin 버전을 직접 수정
+// -----------------------------------------------------------------------------
+const withForcedKotlinGradlePlugin = (config: ExpoConfig) => {
+  return withDangerousMod(config, [
+    "android",
+    async (config) => {
+      const buildGradlePath = path.join(
+        config.modRequest.platformProjectRoot,
+        "build.gradle"
+      );
+
+      // build.gradle 파일이 존재하는 경우에만 수정
+      if (fs.existsSync(buildGradlePath)) {
+        let buildGradleContent = fs.readFileSync(buildGradlePath, "utf-8");
+
+        // kotlin-gradle-plugin 버전을 1.9.25로 강제 설정
+        // 패턴 1: classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:VERSION"
+        buildGradleContent = buildGradleContent.replace(
+          /classpath\s+["']org\.jetbrains\.kotlin:kotlin-gradle-plugin:[^"']+["']/g,
+          'classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25"'
+        );
+
+        // 패턴 2: kotlin("android") version "VERSION"
+        buildGradleContent = buildGradleContent.replace(
+          /kotlin\s*\(\s*["']android["']\s*\)\s+version\s+["'][^"']+["']/g,
+          'kotlin("android") version "1.9.25"'
+        );
+
+        // 패턴 3: ext.kotlinVersion = "VERSION"
+        if (buildGradleContent.includes("ext.kotlinVersion")) {
+          buildGradleContent = buildGradleContent.replace(
+            /ext\.kotlinVersion\s*=\s*["'][^"']+["']/g,
+            'ext.kotlinVersion = "1.9.25"'
+          );
+        } else {
+          // ext 블록이 있으면 추가, 없으면 생성
+          if (buildGradleContent.includes("ext {")) {
+            buildGradleContent = buildGradleContent.replace(
+              /(ext\s*\{[^}]*)/,
+              '$1\n    kotlinVersion = "1.9.25"'
+            );
+          } else {
+            // buildscript 블록 내에 ext 추가
+            buildGradleContent = buildGradleContent.replace(
+              /(buildscript\s*\{[^}]*)/,
+              '$1\n    ext.kotlinVersion = "1.9.25"'
+            );
+          }
+        }
+
+        fs.writeFileSync(buildGradlePath, buildGradleContent, "utf-8");
+      }
+
+      return config;
+    },
+  ]);
 };
 
 export default ({ config }: ConfigContext): ExpoConfig => {
@@ -126,6 +187,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
   };
 
-  // Kotlin 버전 강제 적용
-  return withForcedKotlinVersion(baseConfig);
+  // Kotlin 버전 강제 적용 (두 가지 방법 모두 적용)
+  let finalConfig = withForcedKotlinVersionInProperties(baseConfig);
+  finalConfig = withForcedKotlinGradlePlugin(finalConfig);
+  return finalConfig;
 };
