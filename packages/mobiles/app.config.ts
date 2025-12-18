@@ -14,7 +14,37 @@
  *
  * 또는 .env 파일을 사용할 수 있습니다.
  */
-export default () => {
+import { ExpoConfig, ConfigContext } from 'expo/config';
+import { withGradleProperties } from 'expo/config-plugins';
+
+// -----------------------------------------------------------------------------
+// [핵심] Kotlin 버전을 강제로 1.9.25로 고정하는 커스텀 플러그인 함수
+// -----------------------------------------------------------------------------
+const withForcedKotlinVersion = (config: ExpoConfig) => {
+  return withGradleProperties(config, (config) => {
+    const key = 'kotlinVersion';
+    const value = '1.9.25'; // ★ 우리가 원하는 바로 그 버전!
+
+    // 1. 기존에 kotlinVersion 설정이 있다면 삭제합니다.
+    config.modResults = config.modResults.filter((item) => {
+      if (item.type === 'property' && item.key === key) {
+        return false;
+      }
+      return true;
+    });
+
+    // 2. 새로운 버전을 추가합니다.
+    config.modResults.push({
+      type: 'property',
+      key,
+      value,
+    });
+
+    return config;
+  });
+};
+
+export default ({ config }: ConfigContext): ExpoConfig => {
   // 환경 변수에서 값 가져오기 (기본값: app.json의 projectId)
   const easProjectId =
     process.env.EAS_PROJECT_ID ||
@@ -34,7 +64,9 @@ export default () => {
     ? `https://u.expo.dev/${easProjectId}`
     : undefined;
 
-  return {
+  // 기본 설정 생성
+  const baseConfig: ExpoConfig = {
+    ...config,
     expo: {
       name: "mobiles",
       slug: "mobiles",
@@ -93,4 +125,7 @@ export default () => {
       },
     },
   };
+
+  // Kotlin 버전 강제 적용
+  return withForcedKotlinVersion(baseConfig);
 };
