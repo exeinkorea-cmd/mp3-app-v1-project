@@ -5,30 +5,31 @@
   "build": {
     "development": {
       "developmentClient": true,
-      "distribution": "internal"
+      "distribution": "internal",
+      "env": {
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
+      }
     },
     "preview": {
       "distribution": "internal",
       "android": {
         "buildType": "apk"
+      },
+      "env": {
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
       }
     },
     "production": {
       "distribution": "store",
       "android": {
         "buildType": "app-bundle"
+      },
+      "env": {
+        "NPM_CONFIG_LEGACY_PEER_DEPS": "true"
       }
     }
   },
   "submit": {
     "production": {}
-  },
-  "eas": {
-    "ignore": [
-      "packages/*backup*",
-      "packages/m-users*",
-      "backup_*",
-      "backups/"
-    ]
   }
 }
