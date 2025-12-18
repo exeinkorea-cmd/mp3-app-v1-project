@@ -75,6 +75,8 @@ packages/web-cms/.env.local
 # Backup folders (contain sensitive data)
 backup_*/
 backups/
+packages/*backup*
+packages/m-users*
 
 # dataconnect generated files
 .dataconnect

@@ -31,7 +31,10 @@
   "author": "",
   "license": "ISC",
   "workspaces": [
-    "packages/*"
+    "packages/common",
+    "packages/functions",
+    "packages/web-cms",
+    "packages/mobiles"
   ],
   "devDependencies": {
     "firebase-tools": "^13.0.0"
