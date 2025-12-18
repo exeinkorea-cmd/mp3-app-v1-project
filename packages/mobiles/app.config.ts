@@ -61,6 +61,16 @@ export default () => {
         package: "com.mp3.mobiles",
         kotlinVersion: "1.9.25",
       },
+      plugins: [
+        [
+          "expo-build-properties",
+          {
+            android: {
+              kotlinVersion: "1.9.25",
+            },
+          },
+        ],
+      ],
       web: {
         favicon: "./assets/favicon.png",
       },
