@@ -15,9 +15,11 @@
  * 또는 .env 파일을 사용할 수 있습니다.
  */
 import { ExpoConfig, ConfigContext } from "expo/config";
-import { withGradleProperties, withDangerousMod } from "expo/config-plugins";
-import * as fs from "fs";
-import * as path from "path";
+import {
+  withGradleProperties,
+  withProjectBuildGradle,
+  withAppBuildGradle,
+} from "expo/config-plugins";
 
 // -----------------------------------------------------------------------------
 // [핵심 1] gradle.properties에 kotlinVersion 추가
@@ -47,62 +49,44 @@ const withForcedKotlinVersionInProperties = (config: ExpoConfig) => {
 };
 
 // -----------------------------------------------------------------------------
-// [핵심 2] build.gradle에서 kotlin-gradle-plugin 버전을 직접 수정
+// [핵심 2-1] 프로젝트 루트 build.gradle에서 kotlinVersion을 강제로 1.9.25로 설정
 // -----------------------------------------------------------------------------
-const withForcedKotlinGradlePlugin = (config: ExpoConfig) => {
-  return withDangerousMod(config, [
-    "android",
-    async (config) => {
-      const buildGradlePath = path.join(
-        config.modRequest.platformProjectRoot,
-        "build.gradle"
+const withForcedKotlinInProjectBuildGradle = (config: ExpoConfig) => {
+  return withProjectBuildGradle(config, (modConfig) => {
+    if (modConfig.modResults.language === "groovy") {
+      const buildGradleContent = modConfig.modResults.contents;
+
+      // kotlinVersion = 뒤에 뭐가 오든 그 줄 전체를 잡아서 1.9.25로 교체
+      // findProperty('android.kotlinVersion') ?: '1.9.24' 같은 복잡한 형태도 잡음
+      const newBuildGradleContent = buildGradleContent.replace(
+        /kotlinVersion\s*=\s*.*$/gm,
+        'kotlinVersion = "1.9.25"'
       );
 
-      // build.gradle 파일이 존재하는 경우에만 수정
-      if (fs.existsSync(buildGradlePath)) {
-        let buildGradleContent = fs.readFileSync(buildGradlePath, "utf-8");
+      modConfig.modResults.contents = newBuildGradleContent;
+    }
+    return modConfig;
+  });
+};
 
-        // kotlin-gradle-plugin 버전을 1.9.25로 강제 설정
-        // 패턴 1: classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:VERSION"
-        buildGradleContent = buildGradleContent.replace(
-          /classpath\s+["']org\.jetbrains\.kotlin:kotlin-gradle-plugin:[^"']+["']/g,
-          'classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25"'
-        );
+// -----------------------------------------------------------------------------
+// [핵심 2-2] app/build.gradle에서 kotlinVersion 수정 (필요한 경우)
+// -----------------------------------------------------------------------------
+const withForcedKotlinInAppBuildGradle = (config: ExpoConfig) => {
+  return withAppBuildGradle(config, (modConfig) => {
+    if (modConfig.modResults.language === "groovy") {
+      const buildGradleContent = modConfig.modResults.contents;
 
-        // 패턴 2: kotlin("android") version "VERSION"
-        buildGradleContent = buildGradleContent.replace(
-          /kotlin\s*\(\s*["']android["']\s*\)\s+version\s+["'][^"']+["']/g,
-          'kotlin("android") version "1.9.25"'
-        );
+      // kotlinVersion = 뒤에 뭐가 오든 그 줄 전체를 잡아서 1.9.25로 교체
+      const newBuildGradleContent = buildGradleContent.replace(
+        /kotlinVersion\s*=\s*.*$/gm,
+        'kotlinVersion = "1.9.25"'
+      );
 
-        // 패턴 3: ext.kotlinVersion = "VERSION"
-        if (buildGradleContent.includes("ext.kotlinVersion")) {
-          buildGradleContent = buildGradleContent.replace(
-            /ext\.kotlinVersion\s*=\s*["'][^"']+["']/g,
-            'ext.kotlinVersion = "1.9.25"'
-          );
-        } else {
-          // ext 블록이 있으면 추가, 없으면 생성
-          if (buildGradleContent.includes("ext {")) {
-            buildGradleContent = buildGradleContent.replace(
-              /(ext\s*\{[^}]*)/,
-              '$1\n    kotlinVersion = "1.9.25"'
-            );
-          } else {
-            // buildscript 블록 내에 ext 추가
-            buildGradleContent = buildGradleContent.replace(
-              /(buildscript\s*\{[^}]*)/,
-              '$1\n    ext.kotlinVersion = "1.9.25"'
-            );
-          }
-        }
-
-        fs.writeFileSync(buildGradlePath, buildGradleContent, "utf-8");
-      }
-
-      return config;
-    },
-  ]);
+      modConfig.modResults.contents = newBuildGradleContent;
+    }
+    return modConfig;
+  });
 };
 
 export default ({ config }: ConfigContext): ExpoConfig => {
@@ -187,8 +171,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
   };
 
-  // Kotlin 버전 강제 적용 (두 가지 방법 모두 적용)
+  // Kotlin 버전 강제 적용 (세 가지 방법 모두 적용)
   let finalConfig = withForcedKotlinVersionInProperties(baseConfig);
-  finalConfig = withForcedKotlinGradlePlugin(finalConfig);
+  finalConfig = withForcedKotlinInProjectBuildGradle(finalConfig);
+  finalConfig = withForcedKotlinInAppBuildGradle(finalConfig);
   return finalConfig;
 };
