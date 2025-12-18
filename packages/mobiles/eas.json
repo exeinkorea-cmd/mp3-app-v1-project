@@ -22,5 +22,13 @@
   },
   "submit": {
     "production": {}
+  },
+  "eas": {
+    "ignore": [
+      "packages/*backup*",
+      "packages/m-users*",
+      "backup_*",
+      "backups/"
+    ]
   }
 }
