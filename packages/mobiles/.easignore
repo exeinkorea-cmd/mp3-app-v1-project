@@ -12,8 +12,8 @@ packages/common/.npmrc
 packages/common/src/  # src는 제외 (dist만 필요)
 packages/functions/
 packages/web-cms/
-packages/m-users_backup_20251206_211050/
-packages/m-users_backup1204/
+packages/m-users*
+packages/*backup*
 
 # 백업 및 불필요한 파일들
 backups/
