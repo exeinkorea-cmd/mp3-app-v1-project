@@ -8,7 +8,8 @@
       "distribution": "internal",
       "env": {
         "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
-        "ORG_GRADLE_PROJECT_kotlinVersion": "1.9.25"
+        "ORG_GRADLE_PROJECT_kotlinVersion": "1.9.25",
+        "ORG_GRADLE_PROJECT_suppressKotlinVersionCompatibilityCheck": "true"
       }
     },
     "preview": {
@@ -18,7 +19,8 @@
       },
       "env": {
         "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
-        "ORG_GRADLE_PROJECT_kotlinVersion": "1.9.25"
+        "ORG_GRADLE_PROJECT_kotlinVersion": "1.9.25",
+        "ORG_GRADLE_PROJECT_suppressKotlinVersionCompatibilityCheck": "true"
       }
     },
     "production": {
@@ -28,7 +30,8 @@
       },
       "env": {
         "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
-        "ORG_GRADLE_PROJECT_kotlinVersion": "1.9.25"
+        "ORG_GRADLE_PROJECT_kotlinVersion": "1.9.25",
+        "ORG_GRADLE_PROJECT_suppressKotlinVersionCompatibilityCheck": "true"
       }
     }
   },
