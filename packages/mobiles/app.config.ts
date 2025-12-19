@@ -15,7 +15,10 @@
  * 또는 .env 파일을 사용할 수 있습니다.
  */
 import { ExpoConfig, ConfigContext } from "expo/config";
-import { withGradleProperties, withProjectBuildGradle } from "expo/config-plugins";
+import {
+  withGradleProperties,
+  withProjectBuildGradle,
+} from "expo/config-plugins";
 
 // -----------------------------------------------------------------------------
 // [방법 1] gradle.properties에 suppressKotlinVersionCompatibilityCheck 추가
@@ -98,6 +101,50 @@ const withForcedKotlinVersionInBuildGradle = (config: ExpoConfig) => {
 
       // 추가 안전장치: 1.9.24를 모두 1.9.25로 교체
       buildGradle = buildGradle.replace(/1\.9\.24/g, "1.9.25");
+
+      // -----------------------------------------------------------------------
+      // 작전 3: allprojects와 subprojects 블록 추가 (서브프로젝트 강제 적용)
+      // -----------------------------------------------------------------------
+      // 이미 추가되어 있는지 확인
+      if (
+        !buildGradle.includes("// [Fix] Force Kotlin 1.9.25 for all subprojects")
+      ) {
+        const allProjectsBlock = `
+// [Fix] Force Kotlin 1.9.25 for all subprojects
+allprojects {
+    buildscript {
+        repositories {
+            google()
+            mavenCentral()
+        }
+        dependencies {
+            configurations.classpath.resolutionStrategy {
+                force("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
+                force("org.jetbrains.kotlin:kotlin-stdlib:1.9.25")
+            }
+        }
+    }
+    ext {
+        kotlinVersion = "1.9.25"
+    }
+}
+
+subprojects {
+    afterEvaluate { project ->
+        project.buildscript {
+            dependencies {
+                configurations.classpath.resolutionStrategy {
+                    force("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
+                    force("org.jetbrains.kotlin:kotlin-stdlib:1.9.25")
+                }
+            }
+        }
+        project.ext.kotlinVersion = "1.9.25"
+    }
+}
+`;
+        buildGradle = buildGradle + "\n" + allProjectsBlock;
+      }
 
       modConfig.modResults.contents = buildGradle;
     }
