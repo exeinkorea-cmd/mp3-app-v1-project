@@ -138,7 +138,10 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
         );
 
         // composeOptions 추가
-        if (content.includes("android {") && !content.includes("composeOptions")) {
+        if (
+          content.includes("android {") &&
+          !content.includes("composeOptions")
+        ) {
           const compileOptionsPattern = /(compileOptions\s*\{[^}]+\})/s;
           if (compileOptionsPattern.test(content)) {
             content = content.replace(
