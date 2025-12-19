@@ -22,68 +22,80 @@ import {
 } from "expo/config-plugins";
 
 // -----------------------------------------------------------------------------
-// [핵심 1] gradle.properties에 kotlinVersion 추가
+// [핵심 1] gradle.properties에 kotlinVersion 강제 주입 (양동 작전 - 속성값)
 // -----------------------------------------------------------------------------
-const withForcedKotlinVersionInProperties = (config: ExpoConfig) => {
-  return withGradleProperties(config, (config) => {
-    const key = "kotlinVersion";
-    const value = "1.9.25";
+const withForcedKotlinProperty = (config: ExpoConfig) => {
+  return withGradleProperties(config, (modConfig) => {
+    // 여러 속성을 동시에 설정 (android.kotlinVersion과 kotlinVersion 모두)
+    const propertiesToUpdate = [
+      { key: "android.kotlinVersion", value: "1.9.25" },
+      { key: "kotlinVersion", value: "1.9.25" },
+      // Compose 컴파일러 호환성 체크 옵션 (안전장치)
+      { key: "kotlin.version.compatibility.check", value: "true" },
+    ];
 
-    // 기존 kotlinVersion 설정 삭제
-    config.modResults = config.modResults.filter((item) => {
-      if (item.type === "property" && item.key === key) {
-        return false;
+    propertiesToUpdate.forEach(({ key, value }) => {
+      const item = modConfig.modResults.find(
+        (item) => item.type === "property" && item.key === key
+      );
+      if (item) {
+        item.value = value;
+      } else {
+        modConfig.modResults.push({ type: "property", key, value });
       }
-      return true;
     });
 
-    // 새로운 버전 추가
-    config.modResults.push({
-      type: "property",
-      key,
-      value,
-    });
-
-    return config;
+    return modConfig;
   });
 };
 
 // -----------------------------------------------------------------------------
-// [핵심 2-1] 프로젝트 루트 build.gradle에서 kotlinVersion을 강제로 1.9.25로 설정
+// [핵심 2-1] 프로젝트 루트 build.gradle에서 Kotlin 버전 강제 설정 (양동 작전 - 코드)
 // -----------------------------------------------------------------------------
 const withForcedKotlinInProjectBuildGradle = (config: ExpoConfig) => {
   return withProjectBuildGradle(config, (modConfig) => {
     if (modConfig.modResults.language === "groovy") {
-      const buildGradleContent = modConfig.modResults.contents;
+      let content = modConfig.modResults.contents;
 
-      // kotlinVersion = 뒤에 뭐가 오든 그 줄 전체를 잡아서 1.9.25로 교체
-      // findProperty('android.kotlinVersion') ?: '1.9.24' 같은 복잡한 형태도 잡음
-      const newBuildGradleContent = buildGradleContent.replace(
+      // 1. Brute Force: 1.9.24를 모두 1.9.25로 교체
+      content = content.replace(/1\.9\.24/g, "1.9.25");
+
+      // 2. kotlinVersion 변수 명시적으로 재선언
+      content = content.replace(
         /kotlinVersion\s*=\s*.*$/gm,
         'kotlinVersion = "1.9.25"'
       );
 
-      modConfig.modResults.contents = newBuildGradleContent;
+      // 3. kotlin-gradle-plugin classpath에 버전 명시 (변수 사용)
+      content = content.replace(
+        /classpath\s*\(\s*["']org\.jetbrains\.kotlin:kotlin-gradle-plugin["']\s*\)/g,
+        'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")'
+      );
+
+      modConfig.modResults.contents = content;
     }
     return modConfig;
   });
 };
 
 // -----------------------------------------------------------------------------
-// [핵심 2-2] app/build.gradle에서 kotlinVersion 수정 (필요한 경우)
+// [핵심 2-2] app/build.gradle에서 Kotlin 버전 강제 설정 (양동 작전 - 코드)
 // -----------------------------------------------------------------------------
 const withForcedKotlinInAppBuildGradle = (config: ExpoConfig) => {
   return withAppBuildGradle(config, (modConfig) => {
     if (modConfig.modResults.language === "groovy") {
-      const buildGradleContent = modConfig.modResults.contents;
+      let content = modConfig.modResults.contents;
 
-      // kotlinVersion = 뒤에 뭐가 오든 그 줄 전체를 잡아서 1.9.25로 교체
-      const newBuildGradleContent = buildGradleContent.replace(
+      // 1. Brute Force: 1.9.24를 모두 1.9.25로 교체
+      content = content.replace(/1\.9\.24/g, "1.9.25");
+
+      // 2. kotlinVersion 변수 명시적으로 재선언
+      content = content.replace(
         /kotlinVersion\s*=\s*.*$/gm,
         'kotlinVersion = "1.9.25"'
       );
 
-      modConfig.modResults.contents = newBuildGradleContent;
+      modConfig.modResults.contents = content;
     }
     return modConfig;
   });
@@ -171,9 +183,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
   };
 
-  // Kotlin 버전 강제 적용 (세 가지 방법 모두 적용)
-  let finalConfig = withForcedKotlinVersionInProperties(baseConfig);
-  finalConfig = withForcedKotlinInProjectBuildGradle(finalConfig);
+  // Kotlin 버전 강제 적용 (양동 작전: build.gradle + gradle.properties 동시 공격)
+  let finalConfig = withForcedKotlinInProjectBuildGradle(baseConfig);
   finalConfig = withForcedKotlinInAppBuildGradle(finalConfig);
+  finalConfig = withForcedKotlinProperty(finalConfig);
   return finalConfig;
 };
