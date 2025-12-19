@@ -26,48 +26,101 @@ import * as path from "path";
 
 // -----------------------------------------------------------------------------
 // [핵심 0] Buildscript Classpath에 Kotlin 1.9.25 강제 주입 (최우선 적용)
+// 기존 buildscript 블록을 찾아서 수정하거나, 없으면 새로 추가
 // -----------------------------------------------------------------------------
 const withForcedKotlinBuildscript = (config: ExpoConfig) => {
   return withProjectBuildGradle(config, (modConfig) => {
     if (modConfig.modResults.language === "groovy") {
-      const existingContent = modConfig.modResults.contents;
+      let content = modConfig.modResults.contents;
 
-      // buildscript 블록을 파일 최상단에 추가하여 먼저 실행되도록 함
-      const forceScript = `
-// [Fix] Force Kotlin Gradle Plugin to 1.9.25 in the Buildscript Classpath
+      // 기존 buildscript 블록이 있는지 확인
+      const buildscriptMatch = content.match(/buildscript\s*\{[\s\S]*?\n\}/);
+      
+      if (buildscriptMatch) {
+        // 기존 buildscript 블록이 있으면 수정
+        let buildscriptBlock = buildscriptMatch[0];
+        
+        // 1. kotlin-gradle-plugin 버전을 1.9.25로 강제
+        buildscriptBlock = buildscriptBlock.replace(
+          /classpath\s*\(\s*["']org\.jetbrains\.kotlin:kotlin-gradle-plugin[^"']*["']\s*\)/g,
+          'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")'
+        );
+        
+        // 2. classpath에 없으면 추가
+        if (!buildscriptBlock.includes('kotlin-gradle-plugin')) {
+          // dependencies 블록 찾기
+          if (buildscriptBlock.includes('dependencies {')) {
+            buildscriptBlock = buildscriptBlock.replace(
+              /(dependencies\s*\{)/,
+              '$1\n        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")'
+            );
+          } else {
+            // dependencies 블록이 없으면 추가
+            buildscriptBlock = buildscriptBlock.replace(
+              /(buildscript\s*\{)/,
+              '$1\n    dependencies {\n        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")\n    }'
+            );
+          }
+        }
+        
+        // 3. resolutionStrategy 추가 (없으면)
+        if (!buildscriptBlock.includes('configurations.classpath')) {
+          buildscriptBlock = buildscriptBlock.replace(
+            /(\n\})/,
+            '\n    configurations.classpath {\n        resolutionStrategy {\n            force("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")\n            force("org.jetbrains.kotlin:kotlin-stdlib:1.9.25")\n        }\n    }$1'
+          );
+        } else {
+          // 이미 있으면 force 추가
+          if (!buildscriptBlock.includes('force("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")')) {
+            buildscriptBlock = buildscriptBlock.replace(
+              /(resolutionStrategy\s*\{)/,
+              '$1\n            force("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")\n            force("org.jetbrains.kotlin:kotlin-stdlib:1.9.25")'
+            );
+          }
+        }
+        
+        // 기존 블록을 수정된 블록으로 교체
+        content = content.replace(buildscriptMatch[0], buildscriptBlock);
+      } else {
+        // 기존 buildscript 블록이 없으면 파일 최상단에 추가
+        const forceScript = `// [Fix] Force Kotlin Gradle Plugin to 1.9.25 in the Buildscript Classpath
 buildscript {
     repositories {
         google()
         mavenCentral()
     }
     dependencies {
-        // 기존 1.9.24가 로드되기 전에 1.9.25를 먼저 선언
         classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
     }
     configurations.classpath {
         resolutionStrategy {
-            // 혹시라도 다른 버전이 로드되려 하면 강제로 1.9.25로 고정
             force("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
             force("org.jetbrains.kotlin:kotlin-stdlib:1.9.25")
         }
     }
 }
 
-// Ensure the variable is also set for any subprojects referencing it
-ext {
-    kotlinVersion = "1.9.25"
-}
-      `;
-
-      // 이미 추가되어 있는지 확인
-      if (
-        !existingContent.includes(
-          "// [Fix] Force Kotlin Gradle Plugin to 1.9.25 in the Buildscript Classpath"
-        )
-      ) {
-        // 기존 내용의 맨 위에 강제 스크립트 추가
-        modConfig.modResults.contents = forceScript + "\n" + existingContent;
+`;
+        content = forceScript + content;
       }
+
+      // ext 블록 추가 또는 수정
+      if (content.includes('ext {')) {
+        content = content.replace(
+          /kotlinVersion\s*=\s*.*$/gm,
+          'kotlinVersion = "1.9.25"'
+        );
+        if (!content.includes('kotlinVersion = "1.9.25"')) {
+          content = content.replace(
+            /(ext\s*\{)/,
+            '$1\n    kotlinVersion = "1.9.25"'
+          );
+        }
+      } else {
+        content = content + '\n\next {\n    kotlinVersion = "1.9.25"\n}\n';
+      }
+
+      modConfig.modResults.contents = content;
     }
     return modConfig;
   });
@@ -132,24 +185,56 @@ const withForcedKotlinInProjectBuildGradle = (config: ExpoConfig) => {
         const resolutionStrategy = `
 // [EAS Build Fix] Force Kotlin Version to 1.9.25
 allprojects {
-    configurations.all {
-        resolutionStrategy.eachDependency { details ->
-            if (details.requested.group == 'org.jetbrains.kotlin' && details.requested.name == 'kotlin-gradle-plugin') {
-                details.useVersion "1.9.25"
-            }
-            if (details.requested.group == 'org.jetbrains.kotlin' && details.requested.name == 'kotlin-stdlib') {
-                details.useVersion "1.9.25"
+    // 모든 프로젝트의 buildscript에 Kotlin 1.9.25 강제
+    buildscript {
+        repositories {
+            google()
+            mavenCentral()
+        }
+        dependencies {
+            // 기존 kotlin-gradle-plugin을 찾아서 1.9.25로 교체
+            configurations.classpath.resolutionStrategy {
+                force("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
+                force("org.jetbrains.kotlin:kotlin-stdlib:1.9.25")
             }
         }
     }
+    
+    // 모든 의존성에 대해 Kotlin 버전 강제
+    configurations.all {
+        resolutionStrategy.eachDependency { details ->
+            if (details.requested.group == 'org.jetbrains.kotlin') {
+                if (details.requested.name == 'kotlin-gradle-plugin' || 
+                    details.requested.name == 'kotlin-stdlib' ||
+                    details.requested.name.startsWith('kotlin-')) {
+                    details.useVersion "1.9.25"
+                }
+            }
+        }
+    }
+    
+    // ext 변수 설정
+    ext {
+        kotlinVersion = "1.9.25"
+    }
 }
 
-// Ensure the variable is set for modules that rely on it
+// 모든 서브프로젝트에 buildscript 강제 적용
 subprojects {
-    buildscript {
-        ext {
-            kotlinVersion = "1.9.25"
+    afterEvaluate { project ->
+        project.buildscript {
+            repositories {
+                google()
+                mavenCentral()
+            }
+            dependencies {
+                configurations.classpath.resolutionStrategy {
+                    force("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
+                    force("org.jetbrains.kotlin:kotlin-stdlib:1.9.25")
+                }
+            }
         }
+        project.ext.kotlinVersion = "1.9.25"
     }
 }
         `;
@@ -186,7 +271,66 @@ const withForcedKotlinInAppBuildGradle = (config: ExpoConfig) => {
 };
 
 // -----------------------------------------------------------------------------
-// [핵심 3] withDangerousMod로 모든 build.gradle 파일 직접 수정
+// [핵심 3] settings.gradle 파일 수정하여 모든 프로젝트에 Kotlin 버전 강제
+// -----------------------------------------------------------------------------
+const withForcedKotlinInSettingsGradle = (config: ExpoConfig) => {
+  return withDangerousMod(config, [
+    "android",
+    async (config) => {
+      const androidDir = config.modRequest.platformProjectRoot;
+      const settingsGradle = path.join(androidDir, "settings.gradle");
+
+      if (fs.existsSync(settingsGradle)) {
+        let content = fs.readFileSync(settingsGradle, "utf-8");
+
+        // 모든 프로젝트에 buildscript를 강제로 추가하는 코드
+        const forceKotlinScript = `
+// [Fix] Force Kotlin 1.9.25 for all subprojects
+gradle.beforeProject { project ->
+    project.buildscript {
+        repositories {
+            google()
+            mavenCentral()
+        }
+        dependencies {
+            def existingKotlin = configurations.classpath.dependencies.find { 
+                it.group == 'org.jetbrains.kotlin' && it.name == 'kotlin-gradle-plugin' 
+            }
+            if (existingKotlin) {
+                configurations.classpath.resolutionStrategy.force(
+                    "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25"
+                )
+            } else {
+                dependencies {
+                    classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
+                }
+            }
+        }
+        configurations.classpath {
+            resolutionStrategy {
+                force("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
+                force("org.jetbrains.kotlin:kotlin-stdlib:1.9.25")
+            }
+        }
+    }
+    project.ext.kotlinVersion = "1.9.25"
+}
+`;
+
+        // 이미 추가되어 있지 않으면 추가
+        if (!content.includes("// [Fix] Force Kotlin 1.9.25 for all subprojects")) {
+          content = content + "\n" + forceKotlinScript;
+          fs.writeFileSync(settingsGradle, content, "utf-8");
+        }
+      }
+
+      return config;
+    },
+  ]);
+};
+
+// -----------------------------------------------------------------------------
+// [핵심 4] withDangerousMod로 모든 build.gradle 파일 직접 수정
 // -----------------------------------------------------------------------------
 const withForcedKotlinInAllBuildGradle = (config: ExpoConfig) => {
   return withDangerousMod(config, [
@@ -204,8 +348,8 @@ const withForcedKotlinInAllBuildGradle = (config: ExpoConfig) => {
           'kotlinVersion = "1.9.25"'
         );
         content = content.replace(
-          /classpath\s*\(\s*["']org\.jetbrains\.kotlin:kotlin-gradle-plugin["']\s*\)/g,
-          'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")'
+          /classpath\s*\(\s*["']org\.jetbrains\.kotlin:kotlin-gradle-plugin[^"']*["']\s*\)/g,
+          'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")'
         );
         fs.writeFileSync(projectBuildGradle, content, "utf-8");
       }
@@ -309,11 +453,18 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
   };
 
-  // Kotlin 버전 강제 적용 (Buildscript Classpath 강제를 최우선 적용)
+  // Kotlin 버전 강제 적용 (순서 중요!)
+  // 1. buildscript 블록 수정/추가 (최우선)
   let finalConfig = withForcedKotlinBuildscript(baseConfig);
+  // 2. project build.gradle 수정 (allprojects, subprojects 포함)
   finalConfig = withForcedKotlinInProjectBuildGradle(finalConfig);
+  // 3. app build.gradle 수정
   finalConfig = withForcedKotlinInAppBuildGradle(finalConfig);
+  // 4. gradle.properties 수정
   finalConfig = withForcedKotlinProperty(finalConfig);
+  // 5. settings.gradle 수정 (모든 서브프로젝트에 적용)
+  finalConfig = withForcedKotlinInSettingsGradle(finalConfig);
+  // 6. 직접 파일 수정 (최후의 수단)
   finalConfig = withForcedKotlinInAllBuildGradle(finalConfig);
   return finalConfig;
 };
