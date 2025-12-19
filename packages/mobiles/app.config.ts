@@ -19,7 +19,10 @@ import {
   withGradleProperties,
   withProjectBuildGradle,
   withAppBuildGradle,
+  withDangerousMod,
 } from "expo/config-plugins";
+import * as fs from "fs";
+import * as path from "path";
 
 // -----------------------------------------------------------------------------
 // [핵심 1] gradle.properties에 kotlinVersion 강제 주입 (양동 작전 - 속성값)
@@ -50,7 +53,7 @@ const withForcedKotlinProperty = (config: ExpoConfig) => {
 };
 
 // -----------------------------------------------------------------------------
-// [핵심 2-1] 프로젝트 루트 build.gradle에서 Kotlin 버전 강제 설정 (양동 작전 - 코드)
+// [핵심 2-1] 프로젝트 루트 build.gradle에서 Kotlin 버전 강제 설정 + Resolution Strategy
 // -----------------------------------------------------------------------------
 const withForcedKotlinInProjectBuildGradle = (config: ExpoConfig) => {
   return withProjectBuildGradle(config, (modConfig) => {
@@ -71,6 +74,36 @@ const withForcedKotlinInProjectBuildGradle = (config: ExpoConfig) => {
         /classpath\s*\(\s*["']org\.jetbrains\.kotlin:kotlin-gradle-plugin["']\s*\)/g,
         'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")'
       );
+
+      // 4. Resolution Strategy 추가 (최후의 필살기)
+      // 이미 추가되어 있는지 확인
+      if (!content.includes("// [EAS Build Fix] Force Kotlin Version to 1.9.25")) {
+        const resolutionStrategy = `
+// [EAS Build Fix] Force Kotlin Version to 1.9.25
+allprojects {
+    configurations.all {
+        resolutionStrategy.eachDependency { details ->
+            if (details.requested.group == 'org.jetbrains.kotlin' && details.requested.name == 'kotlin-gradle-plugin') {
+                details.useVersion "1.9.25"
+            }
+            if (details.requested.group == 'org.jetbrains.kotlin' && details.requested.name == 'kotlin-stdlib') {
+                details.useVersion "1.9.25"
+            }
+        }
+    }
+}
+
+// Ensure the variable is set for modules that rely on it
+subprojects {
+    buildscript {
+        ext {
+            kotlinVersion = "1.9.25"
+        }
+    }
+}
+        `;
+        content = content + "\n" + resolutionStrategy;
+      }
 
       modConfig.modResults.contents = content;
     }
@@ -99,6 +132,48 @@ const withForcedKotlinInAppBuildGradle = (config: ExpoConfig) => {
     }
     return modConfig;
   });
+};
+
+// -----------------------------------------------------------------------------
+// [핵심 3] withDangerousMod로 모든 build.gradle 파일 직접 수정
+// -----------------------------------------------------------------------------
+const withForcedKotlinInAllBuildGradle = (config: ExpoConfig) => {
+  return withDangerousMod(config, [
+    "android",
+    async (config) => {
+      const androidDir = config.modRequest.platformProjectRoot;
+
+      // android/build.gradle 수정
+      const projectBuildGradle = path.join(androidDir, "build.gradle");
+      if (fs.existsSync(projectBuildGradle)) {
+        let content = fs.readFileSync(projectBuildGradle, "utf-8");
+        content = content.replace(/1\.9\.24/g, "1.9.25");
+        content = content.replace(
+          /kotlinVersion\s*=\s*.*$/gm,
+          'kotlinVersion = "1.9.25"'
+        );
+        content = content.replace(
+          /classpath\s*\(\s*["']org\.jetbrains\.kotlin:kotlin-gradle-plugin["']\s*\)/g,
+          'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion")'
+        );
+        fs.writeFileSync(projectBuildGradle, content, "utf-8");
+      }
+
+      // android/app/build.gradle 수정 (존재하는 경우)
+      const appBuildGradle = path.join(androidDir, "app", "build.gradle");
+      if (fs.existsSync(appBuildGradle)) {
+        let content = fs.readFileSync(appBuildGradle, "utf-8");
+        content = content.replace(/1\.9\.24/g, "1.9.25");
+        content = content.replace(
+          /kotlinVersion\s*=\s*.*$/gm,
+          'kotlinVersion = "1.9.25"'
+        );
+        fs.writeFileSync(appBuildGradle, content, "utf-8");
+      }
+
+      return config;
+    },
+  ]);
 };
 
 export default ({ config }: ConfigContext): ExpoConfig => {
@@ -183,9 +258,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
   };
 
-  // Kotlin 버전 강제 적용 (양동 작전: build.gradle + gradle.properties 동시 공격)
+  // Kotlin 버전 강제 적용 (3단계 공격: build.gradle 수정 + gradle.properties + Resolution Strategy + 직접 파일 수정)
   let finalConfig = withForcedKotlinInProjectBuildGradle(baseConfig);
   finalConfig = withForcedKotlinInAppBuildGradle(finalConfig);
   finalConfig = withForcedKotlinProperty(finalConfig);
+  finalConfig = withForcedKotlinInAllBuildGradle(finalConfig);
   return finalConfig;
 };
