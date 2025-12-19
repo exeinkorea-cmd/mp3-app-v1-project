@@ -1,18 +1,6 @@
 /**
  * Expo 앱 설정 파일
- * 환경 변수에서 Firebase 및 EAS 설정을 동적으로 읽어옵니다.
- *
- * 환경 변수 설정:
- * - EXPO_PUBLIC_FIREBASE_API_KEY
- * - EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN
- * - EXPO_PUBLIC_FIREBASE_PROJECT_ID
- * - EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET
- * - EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID
- * - EXPO_PUBLIC_FIREBASE_APP_ID
- * - EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID
- * - EAS_PROJECT_ID
- *
- * 또는 .env 파일을 사용할 수 있습니다.
+ * Expo SDK 52 + RN 0.76.5 환경에 맞춰 Kotlin 1.9.25를 강제 적용합니다.
  */
 import { ExpoConfig, ConfigContext } from "expo/config";
 import {
@@ -24,19 +12,32 @@ import * as fs from "fs";
 import * as path from "path";
 
 // -----------------------------------------------------------------------------
-// [방법 1] gradle.properties에 suppressKotlinVersionCompatibilityCheck 추가
+// [전략 1] gradle.properties에서 버전 변수 선언 (가장 표준적인 방법)
 // -----------------------------------------------------------------------------
-const withSuppressKotlinVersionCheck = (config: ExpoConfig) => {
+const withKotlinGradleProperty = (config: ExpoConfig) => {
   return withGradleProperties(config, (modConfig) => {
-    // suppressKotlinVersionCompatibilityCheck 속성 추가
-    const existingItem = modConfig.modResults.find(
+    // 1. kotlinVersion 설정
+    const kotlinVersionItem = modConfig.modResults.find(
+      (item) => item.type === "property" && item.key === "kotlinVersion"
+    );
+    if (kotlinVersionItem && kotlinVersionItem.type === "property") {
+      kotlinVersionItem.value = "1.9.25";
+    } else {
+      modConfig.modResults.push({
+        type: "property",
+        key: "kotlinVersion",
+        value: "1.9.25",
+      });
+    }
+
+    // 2. 호환성 체크 무시 설정
+    const suppressItem = modConfig.modResults.find(
       (item) =>
         item.type === "property" &&
         item.key === "suppressKotlinVersionCompatibilityCheck"
     );
-
-    if (existingItem) {
-      existingItem.value = "true";
+    if (suppressItem && suppressItem.type === "property") {
+      suppressItem.value = "true";
     } else {
       modConfig.modResults.push({
         type: "property",
@@ -50,150 +51,32 @@ const withSuppressKotlinVersionCheck = (config: ExpoConfig) => {
 };
 
 // -----------------------------------------------------------------------------
-// [방법 2] Deep Injection: build.gradle 최상단에 강제 스크립트 추가 (하위 모듈 타겟팅)
+// [전략 2] Root build.gradle 직접 치환 (가장 강력한 방법)
 // -----------------------------------------------------------------------------
 const withForcedKotlinVersionInBuildGradle = (config: ExpoConfig) => {
   return withProjectBuildGradle(config, (modConfig) => {
     if (modConfig.modResults.language === "groovy") {
       let buildGradle = modConfig.modResults.contents;
 
-      // -----------------------------------------------------------------------
-      // [핵심 전략] Deep Injection - 파일 최상단에 강제 스크립트 추가
-      // 1. buildscript classpath 강제 (도구 버전 고정)
-      // 2. allprojects & subprojects 모두에 컴파일 옵션 주입 (라이브러리 버전 고정)
-      // 3. afterEvaluate로 나중에 추가되는 설정까지 덮어쓰기 (확인 사살)
-      // -----------------------------------------------------------------------
-      if (
-        !buildGradle.includes(
-          "// [Fix] Deep Injection to Force Kotlin 1.9.25 and Suppress Warnings"
-        )
-      ) {
-        const forceScript = `
-// [Fix] Deep Injection to Force Kotlin 1.9.25 and Suppress Warnings
-buildscript {
-    repositories {
-        google()
-        mavenCentral()
-    }
-    dependencies {
-        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
-    }
-}
-
-allprojects {
-    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-        kotlinOptions {
-            jvmTarget = "1.8"
-            // 컴파일러에게 직접 경고 무시 플래그 전달
-            freeCompilerArgs += [
-                "-P",
-                "plugin:androidx.compose.compiler.plugins.kotlin:suppressKotlinVersionCompatibilityCheck=true"
-            ]
-        }
-    }
-    
-    // Compose Compiler 옵션을 android 블록에도 추가
-    afterEvaluate { project ->
-        if (project.hasProperty("android")) {
-            project.android {
-                compileOptions {
-                    sourceCompatibility JavaVersion.VERSION_1_8
-                    targetCompatibility JavaVersion.VERSION_1_8
-                }
-                // [핵심] Compose Compiler 옵션 추가
-                composeOptions {
-                    kotlinCompilerExtensionVersion = "1.5.15"
-                }
-            }
-        }
-    }
-}
-
-subprojects {
-    // afterEvaluate 없이도 즉시 적용 (타이밍 문제 해결)
-    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-        kotlinOptions {
-            jvmTarget = "1.8"
-            freeCompilerArgs += [
-                "-P",
-                "plugin:androidx.compose.compiler.plugins.kotlin:suppressKotlinVersionCompatibilityCheck=true"
-            ]
-        }
-    }
-    
-    afterEvaluate { project ->
-        // 하위 모듈(expo-modules-core 등)의 의존성 강제 교체
-        project.configurations.all {
-            resolutionStrategy.eachDependency { details ->
-                if (details.requested.group == 'org.jetbrains.kotlin') {
-                    if (details.requested.name == 'kotlin-gradle-plugin' || 
-                        details.requested.name == 'kotlin-stdlib' ||
-                        details.requested.name.startsWith('kotlin-')) {
-                        details.useVersion "1.9.25"
-                    }
-                }
-            }
-        }
-        
-        // Android 모듈인 경우 compileOptions 및 composeOptions 설정
-        if (project.hasProperty("android")) {
-            project.android {
-                compileOptions {
-                    sourceCompatibility JavaVersion.VERSION_1_8
-                    targetCompatibility JavaVersion.VERSION_1_8
-                }
-                // [핵심] Compose Compiler 옵션 추가
-                composeOptions {
-                    kotlinCompilerExtensionVersion = "1.5.15"
-                }
-            }
-        }
-        
-        // buildscript에도 강제 적용
-        if (project.buildscript) {
-            project.buildscript {
-                dependencies {
-                    configurations.classpath.resolutionStrategy {
-                        force("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
-                        force("org.jetbrains.kotlin:kotlin-stdlib:1.9.25")
-                    }
-                }
-            }
-        }
-        
-        project.ext.kotlinVersion = "1.9.25"
-    }
-}
-
-ext {
-    kotlinVersion = "1.9.25"
-}
-        `;
-
-        // 기존 내용의 맨 위에 붙여서 우선권을 가져갑니다.
-        buildGradle = forceScript + "\n" + buildGradle;
-      }
-
-      // -----------------------------------------------------------------------
-      // 추가 안전장치: 기존 코드에서 1.9.24를 모두 1.9.25로 교체
-      // -----------------------------------------------------------------------
-      buildGradle = buildGradle.replace(/1\.9\.24/g, "1.9.25");
-
-      // kotlinVersion 변수 강제 교체
+      // 1. ext { ... } 블록 내의 kotlinVersion 변수값을 정규식으로 찾아 교체
+      // 예: kotlinVersion = "1.9.24" -> kotlinVersion = "1.9.25"
       buildGradle = buildGradle.replace(
-        /kotlinVersion\s*=\s*(?:findProperty\(['"]android\.kotlinVersion['"]\)\s*\?:\s*)?['"][\d.]+['"]/g,
+        /kotlinVersion\s*=\s*['"]1\.9\.2\d['"]/g,
         `kotlinVersion = "1.9.25"`
       );
 
-      // classpath 의존성 직접 교체
+      // 2. classpath 의존성에서 버전 명시적으로 교체
+      // org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlinVersion 형태일 수도 있고 버전이 박혀있을 수도 있음
+      // 안전하게 특정 버전이 하드코딩된 경우를 1.9.25로 변경
       buildGradle = buildGradle.replace(
-        /classpath\s*\(['"]org\.jetbrains\.kotlin:kotlin-gradle-plugin:[^'"]+['"]\)/g,
-        `classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")`
+        /org\.jetbrains\.kotlin:kotlin-gradle-plugin:1\.9\.24/g,
+        `org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25`
       );
 
+      // 3. (옵션) Compose Compiler 버전도 1.5.15로 명시 (Expo 52 표준)
       buildGradle = buildGradle.replace(
-        /classpath\s*\(['"]org\.jetbrains\.kotlin:kotlin-gradle-plugin:\$\{.*\}['"]\)/g,
-        `classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")`
+        /kotlinCompilerExtensionVersion\s*=\s*['"]1\.5\.14['"]/g,
+        `kotlinCompilerExtensionVersion = "1.5.15"`
       );
 
       modConfig.modResults.contents = buildGradle;
@@ -203,7 +86,7 @@ ext {
 };
 
 // -----------------------------------------------------------------------------
-// [방법 3] expo-modules-core의 build.gradle 직접 수정 (최후의 수단)
+// [전략 3] node_modules 내부의 expo-modules-core 패치 (최후의 보루)
 // -----------------------------------------------------------------------------
 const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
   return withDangerousMod(config, [
@@ -212,7 +95,6 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
       const androidDir = config.modRequest.platformProjectRoot;
       const workspaceRoot = path.resolve(androidDir, "../..");
 
-      // expo-modules-core의 build.gradle 경로
       const expoModulesCoreBuildGradle = path.join(
         workspaceRoot,
         "node_modules",
@@ -224,45 +106,27 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
       if (fs.existsSync(expoModulesCoreBuildGradle)) {
         let content = fs.readFileSync(expoModulesCoreBuildGradle, "utf-8");
 
-        // 1.9.24를 모두 1.9.25로 교체
+        // 1.9.24라고 적힌 모든 곳을 1.9.25로 변경
+        // 이는 classpath, ext 변수 등을 모두 포함합니다.
         content = content.replace(/1\.9\.24/g, "1.9.25");
 
-        // kotlinVersion 변수 교체
-        content = content.replace(
-          /kotlinVersion\s*=\s*.*$/gm,
-          'kotlinVersion = "1.9.25"'
-        );
-
-        // classpath 교체
-        content = content.replace(
-          /classpath\s*\(\s*["']org\.jetbrains\.kotlin:kotlin-gradle-plugin[^"']*["']\s*\)/g,
-          'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")'
-        );
-
-        // [핵심] android 블록에 composeOptions 추가
-        if (content.includes("android {") && !content.includes("composeOptions {")) {
-          // android { ... compileOptions { ... } } 패턴 찾기
-          const compileOptionsPattern = /(android\s*\{[^}]*?compileOptions\s*\{[^}]*?\}[^}]*?)(\})/s;
+        // Compose 옵션 확인 및 주입 (1.5.15)
+        if (content.includes("android {") && !content.includes("composeOptions")) {
+          // 간단하게 android 블록 끝부분에 주입 시도하기보다는
+          // compileOptions 뒤를 노리는 것이 안전
+          const compileOptionsPattern = /(compileOptions\s*\{[^}]+\})/s;
           if (compileOptionsPattern.test(content)) {
-            // compileOptions 다음에 composeOptions 추가
             content = content.replace(
               compileOptionsPattern,
-              `$1
-                composeOptions {
-                    kotlinCompilerExtensionVersion = "1.5.15"
-                }
-            $2`
-            );
-          } else {
-            // compileOptions가 없는 경우 android { 바로 다음에 추가
-            content = content.replace(
-              /(android\s*\{)/s,
-              `$1
-                composeOptions {
-                    kotlinCompilerExtensionVersion = "1.5.15"
-                }`
+              `$1\n    composeOptions { kotlinCompilerExtensionVersion = "1.5.15" }`
             );
           }
+        } else if (content.includes("kotlinCompilerExtensionVersion")) {
+          // 이미 존재한다면 버전만 변경
+          content = content.replace(
+            /kotlinCompilerExtensionVersion\s*=\s*['"][^'"]+['"]/g,
+            `kotlinCompilerExtensionVersion = "1.5.15"`
+          );
         }
 
         fs.writeFileSync(expoModulesCoreBuildGradle, content, "utf-8");
@@ -274,11 +138,11 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
 };
 
 export default ({ config }: ConfigContext): ExpoConfig => {
-  // 환경 변수에서 값 가져오기 (기본값: app.json의 projectId)
   const easProjectId =
     process.env.EAS_PROJECT_ID ||
     process.env.EXPO_PUBLIC_EAS_PROJECT_ID ||
     "4045de0c-1a46-4b62-a085-63825983f521";
+
   const firebaseApiKey = process.env.EXPO_PUBLIC_FIREBASE_API_KEY;
   const firebaseAuthDomain = process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN;
   const firebaseProjectId = process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID;
@@ -288,13 +152,11 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   const firebaseAppId = process.env.EXPO_PUBLIC_FIREBASE_APP_ID;
   const firebaseMeasurementId = process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID;
 
-  // EAS Project ID가 있으면 updates URL 생성
   const updatesUrl = easProjectId
     ? `https://u.expo.dev/${easProjectId}`
     : undefined;
 
-  // 기본 설정 생성
-  const baseConfig: ExpoConfig = {
+  const baseConfig = {
     ...config,
     expo: {
       name: "mobiles",
@@ -326,7 +188,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           "expo-build-properties",
           {
             android: {
+              // [중요] Expo 52 표준에 맞게 1.9.25로 설정
               kotlinVersion: "1.9.25",
+              // [추가] buildToolsVersion도 명시해주면 안정성이 올라갑니다 (선택사항)
+              // buildToolsVersion: "35.0.0"
             },
           },
         ],
@@ -338,13 +203,13 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         eas: {
           projectId: easProjectId,
         },
-        firebaseApiKey: firebaseApiKey,
-        firebaseAuthDomain: firebaseAuthDomain,
-        firebaseProjectId: firebaseProjectId,
-        firebaseStorageBucket: firebaseStorageBucket,
-        firebaseMessagingSenderId: firebaseMessagingSenderId,
-        firebaseAppId: firebaseAppId,
-        firebaseMeasurementId: firebaseMeasurementId,
+        firebaseApiKey,
+        firebaseAuthDomain,
+        firebaseProjectId,
+        firebaseStorageBucket,
+        firebaseMessagingSenderId,
+        firebaseAppId,
+        firebaseMeasurementId,
       },
       runtimeVersion: {
         policy: "appVersion",
@@ -355,9 +220,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
   };
 
-  // 네 가지 방법 모두 적용
-  let finalConfig = withSuppressKotlinVersionCheck(baseConfig);
+  // 순서대로 적용: Properties 설정 -> Root Gradle 수정 -> Module 직접 수정
+  let finalConfig = withKotlinGradleProperty(baseConfig as ExpoConfig);
   finalConfig = withForcedKotlinVersionInBuildGradle(finalConfig);
   finalConfig = withForcedKotlinInExpoModulesCore(finalConfig);
+
   return finalConfig;
 };
