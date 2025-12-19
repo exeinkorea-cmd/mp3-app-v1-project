@@ -25,6 +25,55 @@ import * as fs from "fs";
 import * as path from "path";
 
 // -----------------------------------------------------------------------------
+// [핵심 0] Buildscript Classpath에 Kotlin 1.9.25 강제 주입 (최우선 적용)
+// -----------------------------------------------------------------------------
+const withForcedKotlinBuildscript = (config: ExpoConfig) => {
+  return withProjectBuildGradle(config, (modConfig) => {
+    if (modConfig.modResults.language === "groovy") {
+      const existingContent = modConfig.modResults.contents;
+
+      // buildscript 블록을 파일 최상단에 추가하여 먼저 실행되도록 함
+      const forceScript = `
+// [Fix] Force Kotlin Gradle Plugin to 1.9.25 in the Buildscript Classpath
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
+    }
+    dependencies {
+        // 기존 1.9.24가 로드되기 전에 1.9.25를 먼저 선언
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
+    }
+    configurations.classpath {
+        resolutionStrategy {
+            // 혹시라도 다른 버전이 로드되려 하면 강제로 1.9.25로 고정
+            force("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
+            force("org.jetbrains.kotlin:kotlin-stdlib:1.9.25")
+        }
+    }
+}
+
+// Ensure the variable is also set for any subprojects referencing it
+ext {
+    kotlinVersion = "1.9.25"
+}
+      `;
+
+      // 이미 추가되어 있는지 확인
+      if (
+        !existingContent.includes(
+          "// [Fix] Force Kotlin Gradle Plugin to 1.9.25 in the Buildscript Classpath"
+        )
+      ) {
+        // 기존 내용의 맨 위에 강제 스크립트 추가
+        modConfig.modResults.contents = forceScript + "\n" + existingContent;
+      }
+    }
+    return modConfig;
+  });
+};
+
+// -----------------------------------------------------------------------------
 // [핵심 1] gradle.properties에 kotlinVersion 강제 주입 (양동 작전 - 속성값)
 // -----------------------------------------------------------------------------
 const withForcedKotlinProperty = (config: ExpoConfig) => {
@@ -77,7 +126,9 @@ const withForcedKotlinInProjectBuildGradle = (config: ExpoConfig) => {
 
       // 4. Resolution Strategy 추가 (최후의 필살기)
       // 이미 추가되어 있는지 확인
-      if (!content.includes("// [EAS Build Fix] Force Kotlin Version to 1.9.25")) {
+      if (
+        !content.includes("// [EAS Build Fix] Force Kotlin Version to 1.9.25")
+      ) {
         const resolutionStrategy = `
 // [EAS Build Fix] Force Kotlin Version to 1.9.25
 allprojects {
@@ -258,8 +309,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
   };
 
-  // Kotlin 버전 강제 적용 (3단계 공격: build.gradle 수정 + gradle.properties + Resolution Strategy + 직접 파일 수정)
-  let finalConfig = withForcedKotlinInProjectBuildGradle(baseConfig);
+  // Kotlin 버전 강제 적용 (Buildscript Classpath 강제를 최우선 적용)
+  let finalConfig = withForcedKotlinBuildscript(baseConfig);
+  finalConfig = withForcedKotlinInProjectBuildGradle(finalConfig);
   finalConfig = withForcedKotlinInAppBuildGradle(finalConfig);
   finalConfig = withForcedKotlinProperty(finalConfig);
   finalConfig = withForcedKotlinInAllBuildGradle(finalConfig);
