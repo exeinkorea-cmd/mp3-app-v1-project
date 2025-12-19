@@ -18,7 +18,10 @@ import { ExpoConfig, ConfigContext } from "expo/config";
 import {
   withGradleProperties,
   withProjectBuildGradle,
+  withDangerousMod,
 } from "expo/config-plugins";
+import * as fs from "fs";
+import * as path from "path";
 
 // -----------------------------------------------------------------------------
 // [방법 1] gradle.properties에 suppressKotlinVersionCompatibilityCheck 추가
@@ -107,7 +110,9 @@ const withForcedKotlinVersionInBuildGradle = (config: ExpoConfig) => {
       // -----------------------------------------------------------------------
       // 이미 추가되어 있는지 확인
       if (
-        !buildGradle.includes("// [Fix] Force Kotlin 1.9.25 for all subprojects")
+        !buildGradle.includes(
+          "// [Fix] Force Kotlin 1.9.25 for all subprojects"
+        )
       ) {
         const allProjectsBlock = `
 // [Fix] Force Kotlin 1.9.25 for all subprojects
@@ -144,6 +149,31 @@ subprojects {
 }
 `;
         buildGradle = buildGradle + "\n" + allProjectsBlock;
+      }
+
+      // -----------------------------------------------------------------------
+      // 작전 4: Compose 컴파일러 옵션 직접 주입 (Compiler Arg Injection)
+      // -----------------------------------------------------------------------
+      // 이미 추가되어 있는지 확인
+      if (
+        !buildGradle.includes(
+          "// [Fix] Force Suppress Compose Compiler Version Check"
+        )
+      ) {
+        const suppressComposeScript = `
+// [Fix] Force Suppress Compose Compiler Version Check
+allprojects {
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        kotlinOptions {
+            freeCompilerArgs += [
+                "-P",
+                "plugin:androidx.compose.compiler.plugins.kotlin:suppressKotlinVersionCompatibilityCheck=true"
+            ]
+        }
+    }
+}
+`;
+        buildGradle = buildGradle + "\n" + suppressComposeScript;
       }
 
       modConfig.modResults.contents = buildGradle;
@@ -234,8 +264,136 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     },
   };
 
-  // 두 가지 방법 모두 적용
+// -----------------------------------------------------------------------------
+// [방법 3] expo-modules-core의 build.gradle 직접 수정 (최후의 수단)
+// -----------------------------------------------------------------------------
+const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
+  return withDangerousMod(config, [
+    "android",
+    async (config) => {
+      const androidDir = config.modRequest.platformProjectRoot;
+      const workspaceRoot = path.resolve(androidDir, "../..");
+
+      // expo-modules-core의 build.gradle 경로
+      const expoModulesCoreBuildGradle = path.join(
+        workspaceRoot,
+        "node_modules",
+        "expo-modules-core",
+        "android",
+        "build.gradle"
+      );
+
+      if (fs.existsSync(expoModulesCoreBuildGradle)) {
+        let content = fs.readFileSync(expoModulesCoreBuildGradle, "utf-8");
+
+        // 1.9.24를 모두 1.9.25로 교체
+        content = content.replace(/1\.9\.24/g, "1.9.25");
+
+        // kotlinVersion 변수 교체
+        content = content.replace(
+          /kotlinVersion\s*=\s*.*$/gm,
+          'kotlinVersion = "1.9.25"'
+        );
+
+        // classpath 교체
+        content = content.replace(
+          /classpath\s*\(\s*["']org\.jetbrains\.kotlin:kotlin-gradle-plugin[^"']*["']\s*\)/g,
+          'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")'
+        );
+
+        fs.writeFileSync(expoModulesCoreBuildGradle, content, "utf-8");
+      }
+
+      return config;
+    },
+  ]);
+};
+
+export default ({ config }: ConfigContext): ExpoConfig => {
+  // 환경 변수에서 값 가져오기 (기본값: app.json의 projectId)
+  const easProjectId =
+    process.env.EAS_PROJECT_ID ||
+    process.env.EXPO_PUBLIC_EAS_PROJECT_ID ||
+    "4045de0c-1a46-4b62-a085-63825983f521";
+  const firebaseApiKey = process.env.EXPO_PUBLIC_FIREBASE_API_KEY;
+  const firebaseAuthDomain = process.env.EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN;
+  const firebaseProjectId = process.env.EXPO_PUBLIC_FIREBASE_PROJECT_ID;
+  const firebaseStorageBucket = process.env.EXPO_PUBLIC_FIREBASE_STORAGE_BUCKET;
+  const firebaseMessagingSenderId =
+    process.env.EXPO_PUBLIC_FIREBASE_MESSAGING_SENDER_ID;
+  const firebaseAppId = process.env.EXPO_PUBLIC_FIREBASE_APP_ID;
+  const firebaseMeasurementId = process.env.EXPO_PUBLIC_FIREBASE_MEASUREMENT_ID;
+
+  // EAS Project ID가 있으면 updates URL 생성
+  const updatesUrl = easProjectId
+    ? `https://u.expo.dev/${easProjectId}`
+    : undefined;
+
+  // 기본 설정 생성
+  const baseConfig: ExpoConfig = {
+    ...config,
+    expo: {
+      name: "mobiles",
+      slug: "mobiles",
+      owner: "himill",
+      version: "1.0.0",
+      orientation: "portrait",
+      icon: "./assets/icon.png",
+      userInterfaceStyle: "light",
+      newArchEnabled: false,
+      splash: {
+        image: "./assets/splash-icon.png",
+        resizeMode: "contain",
+        backgroundColor: "#ffffff",
+      },
+      ios: {
+        supportsTablet: true,
+        bundleIdentifier: "com.mp3.mobiles",
+      },
+      android: {
+        adaptiveIcon: {
+          foregroundImage: "./assets/adaptive-icon.png",
+          backgroundColor: "#ffffff",
+        },
+        package: "com.mp3.mobiles",
+      },
+      plugins: [
+        [
+          "expo-build-properties",
+          {
+            android: {
+              kotlinVersion: "1.9.25",
+            },
+          },
+        ],
+      ],
+      web: {
+        favicon: "./assets/favicon.png",
+      },
+      extra: {
+        eas: {
+          projectId: easProjectId,
+        },
+        firebaseApiKey: firebaseApiKey,
+        firebaseAuthDomain: firebaseAuthDomain,
+        firebaseProjectId: firebaseProjectId,
+        firebaseStorageBucket: firebaseStorageBucket,
+        firebaseMessagingSenderId: firebaseMessagingSenderId,
+        firebaseAppId: firebaseAppId,
+        firebaseMeasurementId: firebaseMeasurementId,
+      },
+      runtimeVersion: {
+        policy: "appVersion",
+      },
+      updates: {
+        url: updatesUrl || `https://u.expo.dev/${easProjectId}`,
+      },
+    },
+  };
+
+  // 네 가지 방법 모두 적용
   let finalConfig = withSuppressKotlinVersionCheck(baseConfig);
   finalConfig = withForcedKotlinVersionInBuildGradle(finalConfig);
+  finalConfig = withForcedKotlinInExpoModulesCore(finalConfig);
   return finalConfig;
 };
