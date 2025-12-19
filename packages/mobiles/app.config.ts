@@ -91,30 +91,43 @@ allprojects {
             ]
         }
     }
+    
+    // Compose Compiler 옵션을 android 블록에도 추가
+    afterEvaluate { project ->
+        if (project.hasProperty("android")) {
+            project.android {
+                compileOptions {
+                    sourceCompatibility JavaVersion.VERSION_1_8
+                    targetCompatibility JavaVersion.VERSION_1_8
+                }
+            }
+        }
+    }
 }
 
 subprojects {
+    // afterEvaluate 없이도 즉시 적용 (타이밍 문제 해결)
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        kotlinOptions {
+            jvmTarget = "1.8"
+            freeCompilerArgs += [
+                "-P",
+                "plugin:androidx.compose.compiler.plugins.kotlin:suppressKotlinVersionCompatibilityCheck=true"
+            ]
+        }
+    }
+    
     afterEvaluate { project ->
         // 하위 모듈(expo-modules-core 등)의 의존성 강제 교체
         project.configurations.all {
             resolutionStrategy.eachDependency { details ->
-                if (details.requested.group == 'org.jetbrains.kotlin' && details.requested.name == 'kotlin-gradle-plugin') {
-                    details.useVersion "1.9.25"
+                if (details.requested.group == 'org.jetbrains.kotlin') {
+                    if (details.requested.name == 'kotlin-gradle-plugin' || 
+                        details.requested.name == 'kotlin-stdlib' ||
+                        details.requested.name.startsWith('kotlin-')) {
+                        details.useVersion "1.9.25"
+                    }
                 }
-                if (details.requested.group == 'org.jetbrains.kotlin' && details.requested.name == 'kotlin-stdlib') {
-                    details.useVersion "1.9.25"
-                }
-            }
-        }
-        
-        // 하위 모듈의 Kotlin 컴파일 작업에도 freeCompilerArgs 적용
-        project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-            kotlinOptions {
-                jvmTarget = "1.8"
-                freeCompilerArgs += [
-                    "-P",
-                    "plugin:androidx.compose.compiler.plugins.kotlin:suppressKotlinVersionCompatibilityCheck=true"
-                ]
             }
         }
         
