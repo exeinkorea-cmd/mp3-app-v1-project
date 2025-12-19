@@ -50,7 +50,7 @@ const withSuppressKotlinVersionCheck = (config: ExpoConfig) => {
 };
 
 // -----------------------------------------------------------------------------
-// [방법 2] build.gradle에서 Kotlin 버전을 정규식으로 강제 교체 (정밀 타격)
+// [방법 2] Deep Injection: build.gradle 최상단에 강제 스크립트 추가 (하위 모듈 타겟팅)
 // -----------------------------------------------------------------------------
 const withForcedKotlinVersionInBuildGradle = (config: ExpoConfig) => {
   return withProjectBuildGradle(config, (modConfig) => {
@@ -58,113 +58,33 @@ const withForcedKotlinVersionInBuildGradle = (config: ExpoConfig) => {
       let buildGradle = modConfig.modResults.contents;
 
       // -----------------------------------------------------------------------
-      // 작전 1: ext.kotlinVersion 변수 강제 교체
+      // [핵심 전략] Deep Injection - 파일 최상단에 강제 스크립트 추가
+      // 1. buildscript classpath 강제 (도구 버전 고정)
+      // 2. allprojects & subprojects 모두에 컴파일 옵션 주입 (라이브러리 버전 고정)
+      // 3. afterEvaluate로 나중에 추가되는 설정까지 덮어쓰기 (확인 사살)
       // -----------------------------------------------------------------------
-      // 설명: "kotlinVersion = ..." 으로 시작하는 모든 패턴을 찾아서 1.9.25로 바꿉니다.
-      // (Expo 기본 설정인 findProperty(...) 구문까지 싹 덮어씁니다.)
-      const kotlinVersionPattern =
-        /kotlinVersion\s*=\s*(?:findProperty\(['"]android\.kotlinVersion['"]\)\s*\?:\s*)?['"][\d.]+['"]/g;
-
-      // 만약 패턴이 있다면 교체, 없다면 ext 블록 안에 강제 주입을 위해 플래그 설정
-      if (buildGradle.match(kotlinVersionPattern)) {
-        buildGradle = buildGradle.replace(
-          kotlinVersionPattern,
-          `kotlinVersion = "1.9.25"`
-        );
-      } else {
-        // 패턴을 못 찾았을 경우(매우 드뭄), buildscript 상단에 변수 선언을 추가
-        buildGradle = buildGradle.replace(
-          /buildscript\s*\{/,
-          `buildscript {\n    ext.kotlinVersion = "1.9.25"`
-        );
-      }
-
-      // -----------------------------------------------------------------------
-      // 작전 2: Classpath 의존성 직접 교체 (가장 중요!)
-      // -----------------------------------------------------------------------
-      // 설명: "org.jetbrains.kotlin:kotlin-gradle-plugin:X.X.X" 부분을 찾아서
-      // 버전을 1.9.25로 직접 바꿔버립니다. 변수를 참조하지 않고 하드코딩으로 박습니다.
-      const classpathPattern =
-        /classpath\s*\(['"]org\.jetbrains\.kotlin:kotlin-gradle-plugin:[^'"]+['"]\)/g;
-
-      if (buildGradle.match(classpathPattern)) {
-        buildGradle = buildGradle.replace(
-          classpathPattern,
-          `classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")`
-        );
-      } else {
-        // 만약 ${kotlinVersion} 변수를 쓰고 있다면, 그것도 찾아서 교체
-        const variableClasspathPattern =
-          /classpath\s*\(['"]org\.jetbrains\.kotlin:kotlin-gradle-plugin:\$\{.*\}['"]\)/g;
-        buildGradle = buildGradle.replace(
-          variableClasspathPattern,
-          `classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")`
-        );
-      }
-
-      // 추가 안전장치: 1.9.24를 모두 1.9.25로 교체
-      buildGradle = buildGradle.replace(/1\.9\.24/g, "1.9.25");
-
-      // -----------------------------------------------------------------------
-      // 작전 3: allprojects와 subprojects 블록 추가 (서브프로젝트 강제 적용)
-      // -----------------------------------------------------------------------
-      // 이미 추가되어 있는지 확인
       if (
         !buildGradle.includes(
-          "// [Fix] Force Kotlin 1.9.25 for all subprojects"
+          "// [Fix] Deep Injection to Force Kotlin 1.9.25 and Suppress Warnings"
         )
       ) {
-        const allProjectsBlock = `
-// [Fix] Force Kotlin 1.9.25 for all subprojects
-allprojects {
-    buildscript {
-        repositories {
-            google()
-            mavenCentral()
-        }
-        dependencies {
-            configurations.classpath.resolutionStrategy {
-                force("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
-                force("org.jetbrains.kotlin:kotlin-stdlib:1.9.25")
-            }
-        }
+        const forceScript = `
+// [Fix] Deep Injection to Force Kotlin 1.9.25 and Suppress Warnings
+buildscript {
+    repositories {
+        google()
+        mavenCentral()
     }
-    ext {
-        kotlinVersion = "1.9.25"
+    dependencies {
+        classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
     }
 }
 
-subprojects {
-    afterEvaluate { project ->
-        project.buildscript {
-            dependencies {
-                configurations.classpath.resolutionStrategy {
-                    force("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
-                    force("org.jetbrains.kotlin:kotlin-stdlib:1.9.25")
-                }
-            }
-        }
-        project.ext.kotlinVersion = "1.9.25"
-    }
-}
-`;
-        buildGradle = buildGradle + "\n" + allProjectsBlock;
-      }
-
-      // -----------------------------------------------------------------------
-      // 작전 4: Compose 컴파일러 옵션 직접 주입 (Compiler Arg Injection)
-      // -----------------------------------------------------------------------
-      // 이미 추가되어 있는지 확인
-      if (
-        !buildGradle.includes(
-          "// [Fix] Force Suppress Compose Compiler Version Check"
-        )
-      ) {
-        const suppressComposeScript = `
-// [Fix] Force Suppress Compose Compiler Version Check
 allprojects {
     tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
         kotlinOptions {
+            jvmTarget = "1.8"
+            // 컴파일러에게 직접 경고 무시 플래그 전달
             freeCompilerArgs += [
                 "-P",
                 "plugin:androidx.compose.compiler.plugins.kotlin:suppressKotlinVersionCompatibilityCheck=true"
@@ -172,9 +92,88 @@ allprojects {
         }
     }
 }
-`;
-        buildGradle = buildGradle + "\n" + suppressComposeScript;
+
+subprojects {
+    afterEvaluate { project ->
+        // 하위 모듈(expo-modules-core 등)의 의존성 강제 교체
+        project.configurations.all {
+            resolutionStrategy.eachDependency { details ->
+                if (details.requested.group == 'org.jetbrains.kotlin' && details.requested.name == 'kotlin-gradle-plugin') {
+                    details.useVersion "1.9.25"
+                }
+                if (details.requested.group == 'org.jetbrains.kotlin' && details.requested.name == 'kotlin-stdlib') {
+                    details.useVersion "1.9.25"
+                }
+            }
+        }
+        
+        // 하위 모듈의 Kotlin 컴파일 작업에도 freeCompilerArgs 적용
+        project.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+            kotlinOptions {
+                jvmTarget = "1.8"
+                freeCompilerArgs += [
+                    "-P",
+                    "plugin:androidx.compose.compiler.plugins.kotlin:suppressKotlinVersionCompatibilityCheck=true"
+                ]
+            }
+        }
+        
+        // Android 모듈인 경우 compileOptions 설정
+        if (project.hasProperty("android")) {
+            project.android {
+                compileOptions {
+                    sourceCompatibility JavaVersion.VERSION_1_8
+                    targetCompatibility JavaVersion.VERSION_1_8
+                }
+            }
+        }
+        
+        // buildscript에도 강제 적용
+        if (project.buildscript) {
+            project.buildscript {
+                dependencies {
+                    configurations.classpath.resolutionStrategy {
+                        force("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
+                        force("org.jetbrains.kotlin:kotlin-stdlib:1.9.25")
+                    }
+                }
+            }
+        }
+        
+        project.ext.kotlinVersion = "1.9.25"
+    }
+}
+
+ext {
+    kotlinVersion = "1.9.25"
+}
+        `;
+
+        // 기존 내용의 맨 위에 붙여서 우선권을 가져갑니다.
+        buildGradle = forceScript + "\n" + buildGradle;
       }
+
+      // -----------------------------------------------------------------------
+      // 추가 안전장치: 기존 코드에서 1.9.24를 모두 1.9.25로 교체
+      // -----------------------------------------------------------------------
+      buildGradle = buildGradle.replace(/1\.9\.24/g, "1.9.25");
+
+      // kotlinVersion 변수 강제 교체
+      buildGradle = buildGradle.replace(
+        /kotlinVersion\s*=\s*(?:findProperty\(['"]android\.kotlinVersion['"]\)\s*\?:\s*)?['"][\d.]+['"]/g,
+        `kotlinVersion = "1.9.25"`
+      );
+
+      // classpath 의존성 직접 교체
+      buildGradle = buildGradle.replace(
+        /classpath\s*\(['"]org\.jetbrains\.kotlin:kotlin-gradle-plugin:[^'"]+['"]\)/g,
+        `classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")`
+      );
+
+      buildGradle = buildGradle.replace(
+        /classpath\s*\(['"]org\.jetbrains\.kotlin:kotlin-gradle-plugin:\$\{.*\}['"]\)/g,
+        `classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")`
+      );
 
       modConfig.modResults.contents = buildGradle;
     }
