@@ -100,6 +100,10 @@ allprojects {
                     sourceCompatibility JavaVersion.VERSION_1_8
                     targetCompatibility JavaVersion.VERSION_1_8
                 }
+                // [핵심] Compose Compiler 옵션 추가
+                composeOptions {
+                    kotlinCompilerExtensionVersion = "1.5.15"
+                }
             }
         }
     }
@@ -131,12 +135,16 @@ subprojects {
             }
         }
         
-        // Android 모듈인 경우 compileOptions 설정
+        // Android 모듈인 경우 compileOptions 및 composeOptions 설정
         if (project.hasProperty("android")) {
             project.android {
                 compileOptions {
                     sourceCompatibility JavaVersion.VERSION_1_8
                     targetCompatibility JavaVersion.VERSION_1_8
+                }
+                // [핵심] Compose Compiler 옵션 추가
+                composeOptions {
+                    kotlinCompilerExtensionVersion = "1.5.15"
                 }
             }
         }
@@ -230,6 +238,32 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
           /classpath\s*\(\s*["']org\.jetbrains\.kotlin:kotlin-gradle-plugin[^"']*["']\s*\)/g,
           'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")'
         );
+
+        // [핵심] android 블록에 composeOptions 추가
+        if (content.includes("android {") && !content.includes("composeOptions {")) {
+          // android { ... compileOptions { ... } } 패턴 찾기
+          const compileOptionsPattern = /(android\s*\{[^}]*?compileOptions\s*\{[^}]*?\}[^}]*?)(\})/s;
+          if (compileOptionsPattern.test(content)) {
+            // compileOptions 다음에 composeOptions 추가
+            content = content.replace(
+              compileOptionsPattern,
+              `$1
+                composeOptions {
+                    kotlinCompilerExtensionVersion = "1.5.15"
+                }
+            $2`
+            );
+          } else {
+            // compileOptions가 없는 경우 android { 바로 다음에 추가
+            content = content.replace(
+              /(android\s*\{)/s,
+              `$1
+                composeOptions {
+                    kotlinCompilerExtensionVersion = "1.5.15"
+                }`
+            );
+          }
+        }
 
         fs.writeFileSync(expoModulesCoreBuildGradle, content, "utf-8");
       }
