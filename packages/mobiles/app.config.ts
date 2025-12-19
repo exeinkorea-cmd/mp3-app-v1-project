@@ -79,6 +79,89 @@ const withForcedKotlinVersionInBuildGradle = (config: ExpoConfig) => {
         `kotlinCompilerExtensionVersion = "1.5.15"`
       );
 
+      // [핵심 추가] allprojects와 subprojects에 강제 주입
+      if (
+        !buildGradle.includes(
+          "// [Fix] Force Kotlin 1.9.25 for all projects and subprojects"
+        )
+      ) {
+        const forceScript = `
+// [Fix] Force Kotlin 1.9.25 for all projects and subprojects
+allprojects {
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        kotlinOptions {
+            jvmTarget = "1.8"
+            freeCompilerArgs += [
+                "-P",
+                "plugin:androidx.compose.compiler.plugins.kotlin:suppressKotlinVersionCompatibilityCheck=true"
+            ]
+        }
+    }
+    
+    afterEvaluate { project ->
+        if (project.hasProperty("android")) {
+            project.android {
+                compileOptions {
+                    sourceCompatibility JavaVersion.VERSION_1_8
+                    targetCompatibility JavaVersion.VERSION_1_8
+                }
+                composeOptions {
+                    kotlinCompilerExtensionVersion = "1.5.15"
+                }
+            }
+        }
+    }
+}
+
+subprojects {
+    tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
+        kotlinOptions {
+            jvmTarget = "1.8"
+            freeCompilerArgs += [
+                "-P",
+                "plugin:androidx.compose.compiler.plugins.kotlin:suppressKotlinVersionCompatibilityCheck=true"
+            ]
+        }
+    }
+    
+    afterEvaluate { project ->
+        // 의존성 강제 교체
+        project.configurations.all {
+            resolutionStrategy.eachDependency { details ->
+                if (details.requested.group == 'org.jetbrains.kotlin') {
+                    if (details.requested.name == 'kotlin-gradle-plugin' || 
+                        details.requested.name == 'kotlin-stdlib' ||
+                        details.requested.name.startsWith('kotlin-')) {
+                        details.useVersion "1.9.25"
+                    }
+                }
+            }
+        }
+        
+        if (project.hasProperty("android")) {
+            project.android {
+                compileOptions {
+                    sourceCompatibility JavaVersion.VERSION_1_8
+                    targetCompatibility JavaVersion.VERSION_1_8
+                }
+                composeOptions {
+                    kotlinCompilerExtensionVersion = "1.5.15"
+                }
+            }
+        }
+        
+        project.ext.kotlinVersion = "1.9.25"
+    }
+}
+
+ext {
+    kotlinVersion = "1.9.25"
+}
+        `;
+
+        buildGradle = forceScript + "\n" + buildGradle;
+      }
+
       modConfig.modResults.contents = buildGradle;
     }
     return modConfig;
@@ -111,7 +194,10 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
         content = content.replace(/1\.9\.24/g, "1.9.25");
 
         // Compose 옵션 확인 및 주입 (1.5.15)
-        if (content.includes("android {") && !content.includes("composeOptions")) {
+        if (
+          content.includes("android {") &&
+          !content.includes("composeOptions")
+        ) {
           // 간단하게 android 블록 끝부분에 주입 시도하기보다는
           // compileOptions 뒤를 노리는 것이 안전
           const compileOptionsPattern = /(compileOptions\s*\{[^}]+\})/s;
