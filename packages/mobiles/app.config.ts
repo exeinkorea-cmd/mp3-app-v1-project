@@ -15,6 +15,95 @@
  * 또는 .env 파일을 사용할 수 있습니다.
  */
 import { ExpoConfig, ConfigContext } from "expo/config";
+import { withGradleProperties, withProjectBuildGradle } from "expo/config-plugins";
+
+// -----------------------------------------------------------------------------
+// [방법 1] gradle.properties에 suppressKotlinVersionCompatibilityCheck 추가
+// -----------------------------------------------------------------------------
+const withSuppressKotlinVersionCheck = (config: ExpoConfig) => {
+  return withGradleProperties(config, (modConfig) => {
+    // suppressKotlinVersionCompatibilityCheck 속성 추가
+    const existingItem = modConfig.modResults.find(
+      (item) =>
+        item.type === "property" &&
+        item.key === "suppressKotlinVersionCompatibilityCheck"
+    );
+
+    if (existingItem) {
+      existingItem.value = "true";
+    } else {
+      modConfig.modResults.push({
+        type: "property",
+        key: "suppressKotlinVersionCompatibilityCheck",
+        value: "true",
+      });
+    }
+
+    return modConfig;
+  });
+};
+
+// -----------------------------------------------------------------------------
+// [방법 2] build.gradle에서 Kotlin 버전을 정규식으로 강제 교체 (정밀 타격)
+// -----------------------------------------------------------------------------
+const withForcedKotlinVersionInBuildGradle = (config: ExpoConfig) => {
+  return withProjectBuildGradle(config, (modConfig) => {
+    if (modConfig.modResults.language === "groovy") {
+      let buildGradle = modConfig.modResults.contents;
+
+      // -----------------------------------------------------------------------
+      // 작전 1: ext.kotlinVersion 변수 강제 교체
+      // -----------------------------------------------------------------------
+      // 설명: "kotlinVersion = ..." 으로 시작하는 모든 패턴을 찾아서 1.9.25로 바꿉니다.
+      // (Expo 기본 설정인 findProperty(...) 구문까지 싹 덮어씁니다.)
+      const kotlinVersionPattern =
+        /kotlinVersion\s*=\s*(?:findProperty\(['"]android\.kotlinVersion['"]\)\s*\?:\s*)?['"][\d.]+['"]/g;
+
+      // 만약 패턴이 있다면 교체, 없다면 ext 블록 안에 강제 주입을 위해 플래그 설정
+      if (buildGradle.match(kotlinVersionPattern)) {
+        buildGradle = buildGradle.replace(
+          kotlinVersionPattern,
+          `kotlinVersion = "1.9.25"`
+        );
+      } else {
+        // 패턴을 못 찾았을 경우(매우 드뭄), buildscript 상단에 변수 선언을 추가
+        buildGradle = buildGradle.replace(
+          /buildscript\s*\{/,
+          `buildscript {\n    ext.kotlinVersion = "1.9.25"`
+        );
+      }
+
+      // -----------------------------------------------------------------------
+      // 작전 2: Classpath 의존성 직접 교체 (가장 중요!)
+      // -----------------------------------------------------------------------
+      // 설명: "org.jetbrains.kotlin:kotlin-gradle-plugin:X.X.X" 부분을 찾아서
+      // 버전을 1.9.25로 직접 바꿔버립니다. 변수를 참조하지 않고 하드코딩으로 박습니다.
+      const classpathPattern =
+        /classpath\s*\(['"]org\.jetbrains\.kotlin:kotlin-gradle-plugin:[^'"]+['"]\)/g;
+
+      if (buildGradle.match(classpathPattern)) {
+        buildGradle = buildGradle.replace(
+          classpathPattern,
+          `classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")`
+        );
+      } else {
+        // 만약 ${kotlinVersion} 변수를 쓰고 있다면, 그것도 찾아서 교체
+        const variableClasspathPattern =
+          /classpath\s*\(['"]org\.jetbrains\.kotlin:kotlin-gradle-plugin:\$\{.*\}['"]\)/g;
+        buildGradle = buildGradle.replace(
+          variableClasspathPattern,
+          `classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")`
+        );
+      }
+
+      // 추가 안전장치: 1.9.24를 모두 1.9.25로 교체
+      buildGradle = buildGradle.replace(/1\.9\.24/g, "1.9.25");
+
+      modConfig.modResults.contents = buildGradle;
+    }
+    return modConfig;
+  });
+};
 
 export default ({ config }: ConfigContext): ExpoConfig => {
   // 환경 변수에서 값 가져오기 (기본값: app.json의 projectId)
@@ -37,7 +126,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
     : undefined;
 
   // 기본 설정 생성
-  return {
+  const baseConfig: ExpoConfig = {
     ...config,
     expo: {
       name: "mobiles",
@@ -97,4 +186,9 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       },
     },
   };
+
+  // 두 가지 방법 모두 적용
+  let finalConfig = withSuppressKotlinVersionCheck(baseConfig);
+  finalConfig = withForcedKotlinVersionInBuildGradle(finalConfig);
+  return finalConfig;
 };
