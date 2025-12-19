@@ -177,13 +177,40 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
       // 여러 가능한 경로 시도
       const possiblePaths = [
         // 경로 1: packages/mobiles/node_modules (로컬)
-        path.resolve(androidDir, "..", "node_modules", "expo-modules-core", "android", "build.gradle"),
+        path.resolve(
+          androidDir,
+          "..",
+          "node_modules",
+          "expo-modules-core",
+          "android",
+          "build.gradle"
+        ),
         // 경로 2: 루트 node_modules (monorepo)
-        path.resolve(androidDir, "../..", "node_modules", "expo-modules-core", "android", "build.gradle"),
+        path.resolve(
+          androidDir,
+          "../..",
+          "node_modules",
+          "expo-modules-core",
+          "android",
+          "build.gradle"
+        ),
         // 경로 3: EAS 빌드 환경 (절대 경로)
-        path.resolve("/home/expo/workingdir/build", "node_modules", "expo-modules-core", "android", "build.gradle"),
+        path.resolve(
+          "/home/expo/workingdir/build",
+          "node_modules",
+          "expo-modules-core",
+          "android",
+          "build.gradle"
+        ),
         // 경로 4: EAS 빌드 환경 (상대 경로)
-        path.resolve(androidDir, "../../..", "node_modules", "expo-modules-core", "android", "build.gradle"),
+        path.resolve(
+          androidDir,
+          "../../..",
+          "node_modules",
+          "expo-modules-core",
+          "android",
+          "build.gradle"
+        ),
       ];
 
       let expoModulesCoreBuildGradle: string | null = null;
@@ -215,7 +242,7 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
         }
 
         // kotlinVersion 변수 교체
-        if (content.includes('kotlinVersion')) {
+        if (content.includes("kotlinVersion")) {
           const originalKotlinVersion = content;
           content = content.replace(
             /kotlinVersion\s*=\s*["']1\.9\.24["']/g,
@@ -227,7 +254,10 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
         }
 
         // composeOptions 추가/업데이트
-        if (content.includes("android {") && !content.includes('kotlinCompilerExtensionVersion = "1.5.15"')) {
+        if (
+          content.includes("android {") &&
+          !content.includes('kotlinCompilerExtensionVersion = "1.5.15"')
+        ) {
           if (content.includes("composeOptions {")) {
             content = content.replace(
               /kotlinCompilerExtensionVersion\s*=\s*["'][^"']+["']/g,
@@ -254,10 +284,14 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
 
         if (modified) {
           fs.writeFileSync(expoModulesCoreBuildGradle, content, "utf-8");
-          console.log(`✅ Patched expo-modules-core build.gradle at: ${expoModulesCoreBuildGradle}`);
+          console.log(
+            `✅ Patched expo-modules-core build.gradle at: ${expoModulesCoreBuildGradle}`
+          );
         }
       } else {
-        console.warn("⚠️ expo-modules-core build.gradle not found in any expected location");
+        console.warn(
+          "⚠️ expo-modules-core build.gradle not found in any expected location"
+        );
       }
 
       return config;
