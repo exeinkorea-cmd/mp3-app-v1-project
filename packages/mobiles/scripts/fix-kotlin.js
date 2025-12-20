@@ -94,7 +94,29 @@ buildGradleFiles.forEach((filePath, index) => {
     }
   });
 
-  // 4. Compose Compiler 버전 강제 설정
+  // 4. buildFeatures.compose = true 추가
+  if (content.includes("android {")) {
+    if (content.includes("buildFeatures {")) {
+      if (!content.includes("compose = true")) {
+        content = content.replace(
+          /(buildFeatures\s*\{)/,
+          '$1\n        compose = true'
+        );
+        modified = true;
+        console.log("  ✅ Added compose = true to buildFeatures");
+      }
+    } else {
+      // buildFeatures가 없으면 추가
+      content = content.replace(
+        /(android\s*\{)/,
+        '$1\n    buildFeatures {\n        compose = true\n    }'
+      );
+      modified = true;
+      console.log("  ✅ Added buildFeatures { compose = true }");
+    }
+  }
+
+  // 5. Compose Compiler 버전 강제 설정
   if (content.includes("android {")) {
     // composeOptions가 이미 있는 경우
     if (content.includes("composeOptions {")) {
@@ -119,18 +141,67 @@ buildGradleFiles.forEach((filePath, index) => {
         modified = true;
         console.log("  ✅ Added Compose Compiler 1.5.15");
       } else {
-        // compileOptions도 없으면 android 블록 바로 다음에 추가
-        content = content.replace(
-          /(android\s*\{)/,
-          '$1\n    composeOptions {\n        kotlinCompilerExtensionVersion = "1.5.15"\n    }'
-        );
-        modified = true;
-        console.log("  ✅ Injected Compose Compiler 1.5.15 in android block");
+        // buildFeatures 다음에 추가
+        if (content.includes("buildFeatures {")) {
+          content = content.replace(
+            /(buildFeatures\s*\{[^}]+\})/,
+            '$1\n    composeOptions {\n        kotlinCompilerExtensionVersion = "1.5.15"\n    }'
+          );
+          modified = true;
+          console.log("  ✅ Added Compose Compiler 1.5.15 after buildFeatures");
+        } else {
+          // android 블록 바로 다음에 추가
+          content = content.replace(
+            /(android\s*\{)/,
+            '$1\n    composeOptions {\n        kotlinCompilerExtensionVersion = "1.5.15"\n    }'
+          );
+          modified = true;
+          console.log("  ✅ Injected Compose Compiler 1.5.15 in android block");
+        }
       }
     }
   }
 
-  // 5. ext 블록에 kotlinVersion 강제 추가 (없는 경우)
+  // 6. kotlinOptions.jvmTarget 추가
+  if (content.includes("android {")) {
+    if (content.includes("kotlinOptions {")) {
+      if (!content.includes("jvmTarget")) {
+        content = content.replace(
+          /(kotlinOptions\s*\{)/,
+          '$1\n            jvmTarget = "17"'
+        );
+        modified = true;
+        console.log("  ✅ Added jvmTarget = 17 to kotlinOptions");
+      } else {
+        // 기존 jvmTarget을 17로 업데이트
+        content = content.replace(
+          /jvmTarget\s*=\s*["'][^"']+["']/g,
+          'jvmTarget = "17"'
+        );
+        modified = true;
+        console.log("  ✅ Updated jvmTarget to 17");
+      }
+    } else {
+      // kotlinOptions가 없으면 추가
+      if (content.includes("composeOptions {")) {
+        content = content.replace(
+          /(composeOptions\s*\{[^}]+\})/,
+          '$1\n    kotlinOptions {\n        jvmTarget = "17"\n    }'
+        );
+        modified = true;
+        console.log("  ✅ Added kotlinOptions { jvmTarget = 17 } after composeOptions");
+      } else {
+        content = content.replace(
+          /(android\s*\{)/,
+          '$1\n    kotlinOptions {\n        jvmTarget = "17"\n    }'
+        );
+        modified = true;
+        console.log("  ✅ Added kotlinOptions { jvmTarget = 17 } in android block");
+      }
+    }
+  }
+
+  // 7. ext 블록에 kotlinVersion 강제 추가 (없는 경우)
   if (!content.includes('kotlinVersion = "1.9.25"') && content.includes("ext {")) {
     content = content.replace(
       /(ext\s*\{)/,

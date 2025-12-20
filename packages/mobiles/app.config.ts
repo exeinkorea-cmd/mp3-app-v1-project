@@ -49,7 +49,9 @@ const withKotlinGradleProperty = (config: ExpoConfig) => {
 
     // 3. [NEW] 빌드 최적화 설정
     const buildConfigItem = modConfig.modResults.find(
-      (item) => item.type === "property" && item.key === "android.defaults.buildfeatures.buildconfig"
+      (item) =>
+        item.type === "property" &&
+        item.key === "android.defaults.buildfeatures.buildconfig"
     );
     if (!buildConfigItem) {
       modConfig.modResults.push({
@@ -164,8 +166,14 @@ subprojects {
             
             if (project.hasProperty("android")) {
                 project.android {
+                    buildFeatures {
+                        compose = true
+                    }
                     composeOptions {
                         kotlinCompilerExtensionVersion = "1.5.15"
+                    }
+                    kotlinOptions {
+                        jvmTarget = "17"
                     }
                 }
             }
@@ -190,8 +198,14 @@ subprojects {
         
         if (project.hasProperty("android")) {
             project.android {
+                buildFeatures {
+                    compose = true
+                }
                 composeOptions {
                     kotlinCompilerExtensionVersion = "1.5.15"
+                }
+                kotlinOptions {
+                    jvmTarget = "17"
                 }
             }
         }
@@ -221,18 +235,53 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
 
       // 더 많은 경로 시도
       const possiblePaths = [
-        path.resolve(androidDir, "..", "node_modules", "expo-modules-core", "android", "build.gradle"),
-        path.resolve(androidDir, "../..", "node_modules", "expo-modules-core", "android", "build.gradle"),
-        path.resolve(androidDir, "../../..", "node_modules", "expo-modules-core", "android", "build.gradle"),
-        path.resolve("/home/expo/workingdir/build", "node_modules", "expo-modules-core", "android", "build.gradle"),
-        path.resolve("/home/expo/workingdir/build/packages/mobiles", "node_modules", "expo-modules-core", "android", "build.gradle"),
+        path.resolve(
+          androidDir,
+          "..",
+          "node_modules",
+          "expo-modules-core",
+          "android",
+          "build.gradle"
+        ),
+        path.resolve(
+          androidDir,
+          "../..",
+          "node_modules",
+          "expo-modules-core",
+          "android",
+          "build.gradle"
+        ),
+        path.resolve(
+          androidDir,
+          "../../..",
+          "node_modules",
+          "expo-modules-core",
+          "android",
+          "build.gradle"
+        ),
+        path.resolve(
+          "/home/expo/workingdir/build",
+          "node_modules",
+          "expo-modules-core",
+          "android",
+          "build.gradle"
+        ),
+        path.resolve(
+          "/home/expo/workingdir/build/packages/mobiles",
+          "node_modules",
+          "expo-modules-core",
+          "android",
+          "build.gradle"
+        ),
       ];
 
       let expoModulesCoreBuildGradle: string | null = null;
       for (const possiblePath of possiblePaths) {
         if (fs.existsSync(possiblePath)) {
           expoModulesCoreBuildGradle = possiblePath;
-          console.log(`[withDangerousMod] Found expo-modules-core at: ${possiblePath}`);
+          console.log(
+            `[withDangerousMod] Found expo-modules-core at: ${possiblePath}`
+          );
           break;
         }
       }
@@ -243,7 +292,7 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
 
         // 더 강력한 치환
         const originalContent = content;
-        
+
         // 1. 모든 1.9.24를 1.9.25로 변경
         content = content.replace(/1\.9\.24/g, "1.9.25");
         if (content !== originalContent) modified = true;
@@ -260,7 +309,26 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
           'kotlinVersion = "1.9.25"'
         );
 
-        // 4. composeOptions 강제 설정
+        // 4. buildFeatures.compose = true 추가
+        if (content.includes("android {")) {
+          if (content.includes("buildFeatures {")) {
+            if (!content.includes("compose = true")) {
+              content = content.replace(
+                /(buildFeatures\s*\{)/,
+                '$1\n        compose = true'
+              );
+              modified = true;
+            }
+          } else {
+            content = content.replace(
+              /(android\s*\{)/,
+              '$1\n    buildFeatures {\n        compose = true\n    }'
+            );
+            modified = true;
+          }
+        }
+
+        // 5. composeOptions 강제 설정
         if (content.includes("android {")) {
           if (content.includes("composeOptions {")) {
             content = content.replace(
@@ -270,19 +338,61 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
             modified = true;
           } else {
             content = content.replace(
-              /(android\s*\{)/,
+              /(buildFeatures\s*\{[^}]+\})/,
               '$1\n    composeOptions {\n        kotlinCompilerExtensionVersion = "1.5.15"\n    }'
             );
+            if (!content.includes("composeOptions {")) {
+              content = content.replace(
+                /(android\s*\{)/,
+                '$1\n    composeOptions {\n        kotlinCompilerExtensionVersion = "1.5.15"\n    }'
+              );
+            }
+            modified = true;
+          }
+        }
+
+        // 6. kotlinOptions.jvmTarget 추가
+        if (content.includes("android {")) {
+          if (content.includes("kotlinOptions {")) {
+            if (!content.includes("jvmTarget")) {
+              content = content.replace(
+                /(kotlinOptions\s*\{)/,
+                '$1\n            jvmTarget = "17"'
+              );
+              modified = true;
+            } else {
+              // 기존 jvmTarget을 17로 업데이트
+              content = content.replace(
+                /jvmTarget\s*=\s*["'][^"']+["']/g,
+                'jvmTarget = "17"'
+              );
+              modified = true;
+            }
+          } else {
+            content = content.replace(
+              /(composeOptions\s*\{[^}]+\})/,
+              '$1\n    kotlinOptions {\n        jvmTarget = "17"\n    }'
+            );
+            if (!content.includes("kotlinOptions {")) {
+              content = content.replace(
+                /(android\s*\{)/,
+                '$1\n    kotlinOptions {\n        jvmTarget = "17"\n    }'
+              );
+            }
             modified = true;
           }
         }
 
         if (modified) {
           fs.writeFileSync(expoModulesCoreBuildGradle, content, "utf-8");
-          console.log(`[withDangerousMod] ✅ Patched: ${expoModulesCoreBuildGradle}`);
+          console.log(
+            `[withDangerousMod] ✅ Patched: ${expoModulesCoreBuildGradle}`
+          );
         }
       } else {
-        console.warn("[withDangerousMod] ⚠️ expo-modules-core build.gradle not found");
+        console.warn(
+          "[withDangerousMod] ⚠️ expo-modules-core build.gradle not found"
+        );
       }
 
       return config;
