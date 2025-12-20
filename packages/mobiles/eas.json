@@ -9,7 +9,8 @@
       "env": {
         "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
         "ORG_GRADLE_PROJECT_kotlinVersion": "1.9.25",
-        "ORG_GRADLE_PROJECT_suppressKotlinVersionCompatibilityCheck": "true"
+        "ORG_GRADLE_PROJECT_suppressKotlinVersionCompatibilityCheck": "true",
+        "GRADLE_OPTS": "-Dorg.gradle.caching=false -Dorg.gradle.configureondemand=false"
       }
     },
     "preview": {
@@ -20,7 +21,8 @@
       "env": {
         "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
         "ORG_GRADLE_PROJECT_kotlinVersion": "1.9.25",
-        "ORG_GRADLE_PROJECT_suppressKotlinVersionCompatibilityCheck": "true"
+        "ORG_GRADLE_PROJECT_suppressKotlinVersionCompatibilityCheck": "true",
+        "GRADLE_OPTS": "-Dorg.gradle.caching=false -Dorg.gradle.configureondemand=false"
       }
     },
     "production": {
@@ -31,7 +33,8 @@
       "env": {
         "NPM_CONFIG_LEGACY_PEER_DEPS": "true",
         "ORG_GRADLE_PROJECT_kotlinVersion": "1.9.25",
-        "ORG_GRADLE_PROJECT_suppressKotlinVersionCompatibilityCheck": "true"
+        "ORG_GRADLE_PROJECT_suppressKotlinVersionCompatibilityCheck": "true",
+        "GRADLE_OPTS": "-Dorg.gradle.caching=false -Dorg.gradle.configureondemand=false"
       }
     }
   },

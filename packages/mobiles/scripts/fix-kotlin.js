@@ -2,9 +2,14 @@ const fs = require("fs");
 const path = require("path");
 
 console.log("🔧 [POSTINSTALL] Fixing Kotlin version in ALL expo-modules-core...");
+console.log("📂 Current working directory:", process.cwd());
+console.log("📂 Script directory:", __dirname);
 
 const packageRoot = __dirname.replace(/[\\/]scripts$/, "");
 const workspaceRoot = path.resolve(packageRoot, "../..");
+
+console.log("📂 Package root:", packageRoot);
+console.log("📂 Workspace root:", workspaceRoot);
 
 // 모든 가능한 경로
 const searchPaths = [
@@ -38,7 +43,13 @@ const buildGradleFiles = findExpoModulesCoreBuildGradle();
 
 if (buildGradleFiles.length === 0) {
   console.warn("⚠️ expo-modules-core build.gradle not found");
+  console.warn("   Searched paths:");
+  searchPaths.forEach(p => {
+    const exists = fs.existsSync(p) ? "✅ EXISTS" : "❌ NOT FOUND";
+    console.warn(`     - ${p} (${exists})`);
+  });
   console.warn("   This is normal if expo-modules-core is not installed yet.");
+  console.warn("   The postinstall script will run again after npm install completes.");
   process.exit(0);
 }
 
@@ -132,10 +143,28 @@ buildGradleFiles.forEach((filePath, index) => {
   if (modified) {
     fs.writeFileSync(filePath, content, "utf8");
     console.log(`  ✅ Successfully patched: ${filePath}`);
+    
+    // 패치 후 내용 확인 (처음 500자만)
+    const verifyContent = fs.readFileSync(filePath, "utf8");
+    const kotlinMatches = verifyContent.match(/kotlin.*1\.9\.\d+/gi);
+    if (kotlinMatches) {
+      console.log(`  📋 Found Kotlin versions in file: ${kotlinMatches.slice(0, 5).join(", ")}`);
+    }
   } else {
     console.log("  ℹ️  No changes needed (already patched)");
+    
+    // 이미 패치된 경우에도 확인
+    const verifyContent = fs.readFileSync(filePath, "utf8");
+    if (verifyContent.includes("1.9.25")) {
+      console.log("  ✅ Confirmed: Kotlin 1.9.25 is already set");
+    } else if (verifyContent.includes("1.9.24")) {
+      console.warn("  ⚠️  WARNING: Still contains 1.9.24! Pattern matching may need adjustment.");
+    }
   }
 });
 
 console.log("\n🔧 [POSTINSTALL] Kotlin fix complete!");
+console.log("📝 Summary:");
+console.log(`   - Processed ${buildGradleFiles.length} file(s)`);
+console.log("   - All expo-modules-core build.gradle files should now use Kotlin 1.9.25");
 
