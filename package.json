@@ -27,9 +27,7 @@
     "//-- 모든 서비스 한 번에 배포! --//": "",
     "deploy:all": "npm run deploy:hosting && npm run deploy:functions"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
+  "private": true,
   "workspaces": [
     "packages/common",
     "packages/functions",
@@ -37,12 +35,6 @@
     "packages/mobiles"
   ],
   "devDependencies": {
-    "firebase-tools": "^13.0.0",
-    "metro": "^0.81.1"
-  },
-  "dependencies": {
-    "@react-native/js-polyfills": "0.76.5",
-    "expo-updates": "~0.27.4",
-    "metro-cache": "^0.81.5"
+    "firebase-tools": "^13.0.0"
   }
 }
