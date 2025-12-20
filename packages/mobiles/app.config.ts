@@ -1,6 +1,7 @@
 /**
  * Expo 앱 설정 파일
  * Root build.gradle의 Kotlin 버전을 1.9.25로 강제 치환하는 전략
+ * + KSP 플러그인 버전 명시적 설정
  */
 import { ExpoConfig, ConfigContext } from "expo/config";
 import {
@@ -46,12 +47,37 @@ const withKotlinGradleProperty = (config: ExpoConfig) => {
       });
     }
 
+    // 3. [NEW] 빌드 최적화 설정
+    const buildConfigItem = modConfig.modResults.find(
+      (item) => item.type === "property" && item.key === "android.defaults.buildfeatures.buildconfig"
+    );
+    if (!buildConfigItem) {
+      modConfig.modResults.push({
+        type: "property",
+        key: "android.defaults.buildfeatures.buildconfig",
+        value: "true",
+      });
+    }
+
+    // 4. [NEW] Kotlin 컴파일러 옵션
+    const kotlinIncrementalItem = modConfig.modResults.find(
+      (item) => item.type === "property" && item.key === "kotlin.incremental"
+    );
+    if (!kotlinIncrementalItem) {
+      modConfig.modResults.push({
+        type: "property",
+        key: "kotlin.incremental",
+        value: "true",
+      });
+    }
+
     return modConfig;
   });
 };
 
 // -----------------------------------------------------------------------------
 // [전략 1] Root build.gradle의 텍스트를 직접 치환하여 버전 강제 변경
+// + 방법 1: KSP 플러그인 버전 명시적 설정
 // -----------------------------------------------------------------------------
 const withForcedRootKotlinVersion = (config: ExpoConfig) => {
   return withProjectBuildGradle(config, (modConfig) => {
@@ -72,7 +98,6 @@ const withForcedRootKotlinVersion = (config: ExpoConfig) => {
             `buildscript {\n    ext {\n        kotlinVersion = "1.9.25"`
           );
         } else {
-          // ext 블록이 없으면 추가
           buildGradle = buildGradle.replace(
             /buildscript\s*\{/,
             `buildscript {\n    ext {\n        kotlinVersion = "1.9.25"\n    }`
@@ -86,10 +111,27 @@ const withForcedRootKotlinVersion = (config: ExpoConfig) => {
         `org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25`
       );
 
-      // 4. allprojects와 subprojects에 호환성 체크 무시 플래그 주입
+      // 4. [NEW - 방법 1] KSP 플러그인 버전 명시적 설정
+      // plugins 블록에서 KSP 버전 강제
+      if (buildGradle.includes("plugins {") && buildGradle.includes("ksp")) {
+        // plugins { id("com.google.devtools.ksp") version "..." } 형태
+        buildGradle = buildGradle.replace(
+          /id\s*\(['"]com\.google\.devtools\.ksp['"]\)\s*(?:version\s*['"][^'"]+['"])?/g,
+          'id("com.google.devtools.ksp") version "1.9.25-1.0.20"'
+        );
+      }
+
+      // 5. allprojects와 subprojects에 호환성 체크 무시 플래그 주입
       if (!buildGradle.includes("suppressKotlinVersionCompatibilityCheck")) {
         const allProjectsPattern = /allprojects\s*\{/;
         const suppressionLogic = `allprojects {
+    // [NEW] 모든 서브프로젝트에서 Kotlin 플러그인 버전 강제
+    buildscript {
+        dependencies {
+            classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")
+        }
+    }
+    
     tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
         kotlinOptions {
             freeCompilerArgs += [
@@ -101,10 +143,9 @@ const withForcedRootKotlinVersion = (config: ExpoConfig) => {
 `;
         buildGradle = buildGradle.replace(allProjectsPattern, suppressionLogic);
 
-        // subprojects에도 추가 (expo-modules-core 등 하위 모듈용)
+        // subprojects에도 추가
         const subProjectsPattern = /subprojects\s*\{/;
         if (!subProjectsPattern.test(buildGradle)) {
-          // subprojects 블록이 없으면 추가
           buildGradle += `
 subprojects {
     tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
@@ -130,7 +171,7 @@ subprojects {
             }
         }
         
-        // 모든 Kotlin 의존성을 1.9.25로 강제
+        // [NEW - 방법 1] 모든 Kotlin 및 KSP 의존성을 1.9.25로 강제
         project.configurations.all {
             resolutionStrategy.eachDependency { details ->
                 if (details.requested.group == 'org.jetbrains.kotlin') {
@@ -139,6 +180,10 @@ subprojects {
                         details.requested.name.startsWith('kotlin-')) {
                         details.useVersion "1.9.25"
                     }
+                }
+                // [NEW] KSP도 버전 강제
+                if (details.requested.group == 'com.google.devtools.ksp') {
+                    details.useVersion "1.9.25-1.0.20"
                 }
             }
         }
@@ -174,49 +219,20 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
     async (config) => {
       const androidDir = config.modRequest.platformProjectRoot;
 
-      // 여러 가능한 경로 시도
+      // 더 많은 경로 시도
       const possiblePaths = [
-        // 경로 1: packages/mobiles/node_modules (로컬)
-        path.resolve(
-          androidDir,
-          "..",
-          "node_modules",
-          "expo-modules-core",
-          "android",
-          "build.gradle"
-        ),
-        // 경로 2: 루트 node_modules (monorepo)
-        path.resolve(
-          androidDir,
-          "../..",
-          "node_modules",
-          "expo-modules-core",
-          "android",
-          "build.gradle"
-        ),
-        // 경로 3: EAS 빌드 환경 (절대 경로)
-        path.resolve(
-          "/home/expo/workingdir/build",
-          "node_modules",
-          "expo-modules-core",
-          "android",
-          "build.gradle"
-        ),
-        // 경로 4: EAS 빌드 환경 (상대 경로)
-        path.resolve(
-          androidDir,
-          "../../..",
-          "node_modules",
-          "expo-modules-core",
-          "android",
-          "build.gradle"
-        ),
+        path.resolve(androidDir, "..", "node_modules", "expo-modules-core", "android", "build.gradle"),
+        path.resolve(androidDir, "../..", "node_modules", "expo-modules-core", "android", "build.gradle"),
+        path.resolve(androidDir, "../../..", "node_modules", "expo-modules-core", "android", "build.gradle"),
+        path.resolve("/home/expo/workingdir/build", "node_modules", "expo-modules-core", "android", "build.gradle"),
+        path.resolve("/home/expo/workingdir/build/packages/mobiles", "node_modules", "expo-modules-core", "android", "build.gradle"),
       ];
 
       let expoModulesCoreBuildGradle: string | null = null;
       for (const possiblePath of possiblePaths) {
         if (fs.existsSync(possiblePath)) {
           expoModulesCoreBuildGradle = possiblePath;
+          console.log(`[withDangerousMod] Found expo-modules-core at: ${possiblePath}`);
           break;
         }
       }
@@ -225,39 +241,27 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
         let content = fs.readFileSync(expoModulesCoreBuildGradle, "utf-8");
         let modified = false;
 
-        // 1.9.24를 모두 1.9.25로 변경
-        if (content.includes("1.9.24")) {
-          content = content.replace(/1\.9\.24/g, "1.9.25");
-          modified = true;
-        }
+        // 더 강력한 치환
+        const originalContent = content;
+        
+        // 1. 모든 1.9.24를 1.9.25로 변경
+        content = content.replace(/1\.9\.24/g, "1.9.25");
+        if (content !== originalContent) modified = true;
 
-        // classpath 교체
-        const originalClasspath = content;
+        // 2. classpath 교체
         content = content.replace(
           /classpath\s*\(\s*["']org\.jetbrains\.kotlin:kotlin-gradle-plugin[^"']*["']\s*\)/g,
           'classpath("org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25")'
         );
-        if (content !== originalClasspath) {
-          modified = true;
-        }
 
-        // kotlinVersion 변수 교체
-        if (content.includes("kotlinVersion")) {
-          const originalKotlinVersion = content;
-          content = content.replace(
-            /kotlinVersion\s*=\s*["']1\.9\.24["']/g,
-            'kotlinVersion = "1.9.25"'
-          );
-          if (content !== originalKotlinVersion) {
-            modified = true;
-          }
-        }
+        // 3. kotlinVersion 변수 교체 (모든 패턴)
+        content = content.replace(
+          /kotlinVersion\s*=\s*["']1\.9\.24["']/g,
+          'kotlinVersion = "1.9.25"'
+        );
 
-        // composeOptions 추가/업데이트
-        if (
-          content.includes("android {") &&
-          !content.includes('kotlinCompilerExtensionVersion = "1.5.15"')
-        ) {
+        // 4. composeOptions 강제 설정
+        if (content.includes("android {")) {
           if (content.includes("composeOptions {")) {
             content = content.replace(
               /kotlinCompilerExtensionVersion\s*=\s*["'][^"']+["']/g,
@@ -265,33 +269,20 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
             );
             modified = true;
           } else {
-            const compileOptionsPattern = /(compileOptions\s*\{[^}]+\})/s;
-            if (compileOptionsPattern.test(content)) {
-              content = content.replace(
-                compileOptionsPattern,
-                `$1\n    composeOptions { kotlinCompilerExtensionVersion = "1.5.15" }`
-              );
-              modified = true;
-            } else {
-              content = content.replace(
-                /android\s*\{/,
-                'android {\n    composeOptions {\n        kotlinCompilerExtensionVersion = "1.5.15"\n    }'
-              );
-              modified = true;
-            }
+            content = content.replace(
+              /(android\s*\{)/,
+              '$1\n    composeOptions {\n        kotlinCompilerExtensionVersion = "1.5.15"\n    }'
+            );
+            modified = true;
           }
         }
 
         if (modified) {
           fs.writeFileSync(expoModulesCoreBuildGradle, content, "utf-8");
-          console.log(
-            `✅ Patched expo-modules-core build.gradle at: ${expoModulesCoreBuildGradle}`
-          );
+          console.log(`[withDangerousMod] ✅ Patched: ${expoModulesCoreBuildGradle}`);
         }
       } else {
-        console.warn(
-          "⚠️ expo-modules-core build.gradle not found in any expected location"
-        );
+        console.warn("[withDangerousMod] ⚠️ expo-modules-core build.gradle not found");
       }
 
       return config;

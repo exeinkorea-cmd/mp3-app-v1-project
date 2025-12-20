@@ -6,7 +6,8 @@
     "start": "expo start --clear",
     "android": "expo run:android",
     "ios": "expo run:ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "postinstall": "node scripts/fix-kotlin.js"
   },
   "dependencies": {
     "@mp3/common": "file:../common",
