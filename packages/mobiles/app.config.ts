@@ -198,9 +198,7 @@ subprojects {
         
         if (project.hasProperty("android")) {
             project.android {
-                buildFeatures {
-                    compose = true
-                }
+                // composeOptions만 설정 (composeOptions가 있으면 자동으로 Compose 활성화)
                 composeOptions {
                     kotlinCompilerExtensionVersion = "1.5.15"
                 }
@@ -315,14 +313,14 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
             if (!content.includes("compose = true")) {
               content = content.replace(
                 /(buildFeatures\s*\{)/,
-                '$1\n        compose = true'
+                "$1\n        compose = true"
               );
               modified = true;
             }
           } else {
             content = content.replace(
               /(android\s*\{)/,
-              '$1\n    buildFeatures {\n        compose = true\n    }'
+              "$1\n    buildFeatures {\n        compose = true\n    }"
             );
             modified = true;
           }
