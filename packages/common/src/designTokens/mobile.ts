@@ -2,6 +2,12 @@
  * 모바일용 디자인 토큰 (Mobile Design Tokens)
  * React Native 모바일 애플리케이션에서 사용하는 디자인 토큰입니다.
  * 
+ * ⚠️ React 타입 사용 시 주의사항:
+ * - mobiles 패키지에서 react@19.1.0 사용
+ * - React Native의 ViewStyle, TextStyle 등을 사용할 경우
+ *   react@19.1.0과 react-native의 타입 정의를 따릅니다.
+ * - web-cms(react@19.2.0)와 버전이 다르므로 타입 공유 시 주의 필요
+ * 
  * 사용 예시:
  * import { MobileDesignTokens } from "@mp3/common/designTokens/mobile";
  * 
@@ -99,6 +105,8 @@ export const MobileDesignTokens = {
     tooltip: 3000,
   },
 };
+
+
 
 
 

@@ -651,9 +651,9 @@ function SignInForm() {
             )}
           </View>
           <View style={styles.privacyTextContainer}>
-            <Text style={styles.privacyText}>
+          <Text style={styles.privacyText}>
               개인정보처리방침 및 이용약관에 동의합니다
-            </Text>
+          </Text>
             <TouchableOpacity
               onPress={() => setIsPolicyVisible(true)}
               activeOpacity={0.7}
@@ -675,7 +675,7 @@ function SignInForm() {
           <View style={styles.modalContainer}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>개인정보처리방침</Text>
-              <TouchableOpacity
+      <TouchableOpacity
                 onPress={() => setIsPolicyVisible(false)}
                 style={styles.modalCloseButton}
               >
@@ -705,7 +705,7 @@ function SignInForm() {
             <Text style={styles.loginButtonText}>위치 확인 중...</Text>
           </View>
         ) : (
-          <Text style={styles.loginButtonText}>출근하기</Text>
+        <Text style={styles.loginButtonText}>출근하기</Text>
         )}
       </TouchableOpacity>
     </View>

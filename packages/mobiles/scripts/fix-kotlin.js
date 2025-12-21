@@ -1,3 +1,7 @@
+// 주석 처리: Node.js 22 설치 후 Kotlin 버전 강제 설정 불필요
+// 전체 파일이 주석 처리되었습니다. 필요시 주석을 제거하여 활성화할 수 있습니다.
+
+/*
 const fs = require("fs");
 const path = require("path");
 
@@ -238,4 +242,4 @@ console.log("\n🔧 [POSTINSTALL] Kotlin fix complete!");
 console.log("📝 Summary:");
 console.log(`   - Processed ${buildGradleFiles.length} file(s)`);
 console.log("   - All expo-modules-core build.gradle files should now use Kotlin 1.9.25");
-
+*/

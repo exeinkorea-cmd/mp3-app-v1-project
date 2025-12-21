@@ -3,6 +3,11 @@
  * 웹용 디자인 토큰 (Web Design Tokens)
  * React 웹 애플리케이션에서 사용하는 디자인 토큰입니다.
  *
+ * ⚠️ React 타입 사용 시 주의사항:
+ * - web-cms 패키지에서 react@19.2.0 사용
+ * - React.CSSProperties, React.HTMLAttributes 등을 사용할 경우
+ *   react@19.2.0의 타입 정의를 따릅니다.
+ *
  * 사용 예시:
  * import { WebDesignTokens } from "@mp3/common/designTokens/web";
  *

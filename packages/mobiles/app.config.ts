@@ -14,7 +14,9 @@ import * as path from "path";
 
 // -----------------------------------------------------------------------------
 // [전략 0] gradle.properties에 Kotlin 버전 강제 설정
+// 주석 처리: Node.js 22 설치 후 Kotlin 버전 강제 설정 불필요
 // -----------------------------------------------------------------------------
+/*
 const withKotlinGradleProperty = (config: ExpoConfig) => {
   return withGradleProperties(config, (modConfig) => {
     // 1. kotlinVersion 설정
@@ -76,11 +78,14 @@ const withKotlinGradleProperty = (config: ExpoConfig) => {
     return modConfig;
   });
 };
+*/
 
 // -----------------------------------------------------------------------------
 // [전략 1] Root build.gradle의 텍스트를 직접 치환하여 버전 강제 변경
 // + 방법 1: KSP 플러그인 버전 명시적 설정
+// 주석 처리: Node.js 22 설치 후 Kotlin 버전 강제 설정 불필요
 // -----------------------------------------------------------------------------
+/*
 const withForcedRootKotlinVersion = (config: ExpoConfig) => {
   return withProjectBuildGradle(config, (modConfig) => {
     if (modConfig.modResults.language === "groovy") {
@@ -220,11 +225,14 @@ subprojects {
     return modConfig;
   });
 };
+*/
 
 // -----------------------------------------------------------------------------
 // [전략 2] expo-modules-core의 build.gradle 직접 수정 (안전장치)
 // 여러 경로 가능성을 고려하여 개선
+// 주석 처리: Node.js 22 설치 후 Kotlin 버전 강제 설정 불필요
 // -----------------------------------------------------------------------------
+/*
 const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
   return withDangerousMod(config, [
     "android",
@@ -397,6 +405,7 @@ const withForcedKotlinInExpoModulesCore = (config: ExpoConfig) => {
     },
   ]);
 };
+*/
 
 export default ({ config }: ConfigContext): ExpoConfig => {
   const easProjectId =
@@ -445,6 +454,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
         package: "com.mp3.mobiles",
       },
       plugins: [
+        // 주석 처리: Node.js 22 설치 후 Kotlin 버전 강제 설정 불필요
+        /*
         [
           "expo-build-properties",
           {
@@ -453,6 +464,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
             },
           },
         ],
+        */
       ],
       web: {
         favicon: "./assets/favicon.png",
@@ -479,8 +491,10 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   };
 
   // 세 가지 전략 모두 적용
-  let finalConfig = withKotlinGradleProperty(baseConfig as ExpoConfig);
-  finalConfig = withForcedRootKotlinVersion(finalConfig);
-  finalConfig = withForcedKotlinInExpoModulesCore(finalConfig);
+  // 주석 처리: Node.js 22 설치 후 Kotlin 버전 강제 설정 불필요
+  let finalConfig = baseConfig as ExpoConfig;
+  // finalConfig = withKotlinGradleProperty(finalConfig);
+  // finalConfig = withForcedRootKotlinVersion(finalConfig);
+  // finalConfig = withForcedKotlinInExpoModulesCore(finalConfig);
   return finalConfig;
 };
