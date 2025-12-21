@@ -38,7 +38,8 @@
     "typescript": "~5.9.2"
   },
   "overrides": {
-    "undici": "^6.19.8"
+    "undici": "^6.19.8",
+    "react-native-renderer": "19.2.0"
   },
   "private": true
 }
