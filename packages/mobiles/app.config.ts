@@ -434,7 +434,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       owner: "himill",
       version: "1.0.0",
       orientation: "portrait",
-      icon: "./assets/icon.png",
+      icon: "./assets/icon-v2.png",
       userInterfaceStyle: "light",
       newArchEnabled: false,
       splash: {

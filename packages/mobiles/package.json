@@ -24,7 +24,7 @@
     "metro": "^0.83.1",
     "metro-cache": "^0.81.5",
     "metro-runtime": "^0.81.1",
-    "react": "19.2.0",
+    "react": "19.1.0",
     "react-native": "^0.81.0"
   },
   "devDependencies": {
@@ -38,8 +38,7 @@
     "typescript": "~5.9.2"
   },
   "overrides": {
-    "undici": "^6.19.8",
-    "react-native-renderer": "19.2.0"
+    "undici": "^6.19.8"
   },
   "private": true
 }
