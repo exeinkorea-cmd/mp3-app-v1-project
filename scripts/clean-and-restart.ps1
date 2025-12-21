@@ -143,3 +143,4 @@ Write-Host "  3. Firebase Functions 시작: npm run serve:functions" -Foreground
 Write-Host ""
 
 
+
