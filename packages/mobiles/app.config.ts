@@ -448,7 +448,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
       },
       android: {
         adaptiveIcon: {
-          foregroundImage: "./assets/adaptive-icon.png",
+          foregroundImage: "./assets/adaptive-icon-final.png",
           backgroundColor: "#ffffff",
         },
         package: "com.mp3.mobiles",
