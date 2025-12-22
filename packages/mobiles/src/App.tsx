@@ -18,7 +18,7 @@ import {
   Modal,
 } from "react-native";
 
-import { auth, db } from "./firebase";
+import { auth, db, functions } from "./firebase";
 import {
   signInWithEmailAndPassword,
   signInAnonymously,
@@ -44,6 +44,7 @@ import {
   arrayUnion,
   arrayRemove,
 } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 
 import { GREETING, UserRole, BaseDepartment, MobileDesignTokens } from "@mp3/common";
 import * as Location from "expo-location";
@@ -1294,7 +1295,7 @@ function BulletinList({
     ]);
   };
 
-  // 로그아웃 핸들러
+  // 로그아웃 핸들러 (서버 함수 사용)
   const handleLogout = () => {
     Alert.alert("로그아웃", "로그아웃 하시겠습니까?", [
       { text: "취소", style: "cancel" },
@@ -1302,27 +1303,24 @@ function BulletinList({
         text: "로그아웃",
         onPress: async () => {
           try {
-            // 1. authCheckIns 컬렉션에서 해당 사용자의 최신 레코드 찾기
+            // 1. 서버 함수 호출하여 퇴근 처리
             if (mobileUser?.phoneNumber) {
-              const checkInsQuery = query(
-                collection(db, "authCheckIns"),
-                where("phoneNumber", "==", mobileUser.phoneNumber),
-                orderBy("timestamp", "desc")
+              const revokeUserSession = httpsCallable(
+                functions,
+                "revokeUserSession"
               );
+              const result = await revokeUserSession({
+                phoneNumber: mobileUser.phoneNumber,
+              });
 
-              const querySnapshot = await getDocs(checkInsQuery);
+              const data = result.data as {
+                success: boolean;
+                message: string;
+                updatedCount?: number;
+              };
 
-              // checkOutTime이 없는 최신 레코드 찾기
-              for (const docSnapshot of querySnapshot.docs) {
-                const data = docSnapshot.data();
-                if (!data.checkOutTime) {
-                  // checkOutTime 업데이트 및 location 삭제
-                  await updateDoc(doc(db, "authCheckIns", docSnapshot.id), {
-                    checkOutTime: serverTimestamp(),
-                    location: deleteField(), // GPS 정보 삭제
-                  });
-                  break; // 첫 번째 레코드만 업데이트
-                }
+              if (!data.success) {
+                console.error("퇴근 처리 실패:", data.message);
               }
             }
 

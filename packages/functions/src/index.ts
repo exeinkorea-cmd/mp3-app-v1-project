@@ -582,6 +582,86 @@ export const manualRevokeOthersSessions = onCall(
 );
 
 /**
+ * 개별 사용자 로그아웃 (퇴근 처리)
+ * - 기능: 특정 사용자의 authCheckIns 문서에서 checkOutTime 업데이트 및 location 삭제
+ * - 데이터: 출석 데이터를 업데이트하여 퇴근 처리 (삭제하지 않음)
+ * - 전역 초기화: Google Cloud 권장 Standard Global Initialization 패턴 사용
+ */
+export const revokeUserSession = onCall(
+  { region: "us-central1" },
+  async (request) => {
+    logger.info("🔥 [System] 개별 사용자 로그아웃 프로세스 시작");
+
+    try {
+      const { phoneNumber } = request.data;
+
+      if (!phoneNumber) {
+        throw new functions.https.HttpsError(
+          "invalid-argument",
+          "전화번호가 필요합니다."
+        );
+      }
+
+      logger.info(`📱 처리 대상 전화번호: ${phoneNumber}`);
+
+      // 1. 해당 사용자의 최신 출석 레코드 찾기
+      const checkInsSnapshot = await db
+        .collection("authCheckIns")
+        .where("phoneNumber", "==", phoneNumber)
+        .orderBy("timestamp", "desc")
+        .get();
+
+      if (checkInsSnapshot.empty) {
+        logger.info("✅ 처리할 출석 데이터가 없습니다.");
+        return {
+          success: true,
+          message: "처리할 출석 데이터가 없습니다.",
+          updatedCount: 0,
+        };
+      }
+
+      // 2. checkOutTime이 없는 최신 레코드 찾기
+      let updatedCount = 0;
+      for (const docSnapshot of checkInsSnapshot.docs) {
+        const data = docSnapshot.data();
+        if (!data.checkOutTime) {
+          // checkOutTime 업데이트 및 location 삭제
+          await db.collection("authCheckIns").doc(docSnapshot.id).update({
+            checkOutTime: FieldValue.serverTimestamp(),
+            location: FieldValue.delete(), // GPS 정보 삭제
+          });
+          updatedCount = 1;
+          logger.info(`✅ 사용자 퇴근 처리 완료: ${docSnapshot.id}`);
+          break; // 첫 번째 레코드만 업데이트
+        }
+      }
+
+      if (updatedCount === 0) {
+        logger.info("✅ 이미 퇴근 처리된 사용자입니다.");
+        return {
+          success: true,
+          message: "이미 퇴근 처리된 사용자입니다.",
+          updatedCount: 0,
+        };
+      }
+
+      return {
+        success: true,
+        message: "로그아웃 처리 완료",
+        updatedCount: updatedCount,
+      };
+    } catch (error) {
+      logger.error("❌ 처리 실패:", error);
+      throw new functions.https.HttpsError(
+        "internal",
+        "서버 처리 중 오류 발생",
+        JSON.stringify(error)
+      );
+    }
+  }
+);
+
+/**
  * 출석 상태 체크 로직 (내부 함수)
  */
 async function checkAttendanceStatus(checkTime: string) {
