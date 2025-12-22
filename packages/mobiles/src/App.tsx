@@ -1345,7 +1345,7 @@ function BulletinList({
           includeFontPadding={false}
           textAlignVertical="center"
         >
-          엑스인 안전공지 시스템 V1.0
+          안전공지 알리미 V1.0
         </Text>
       </View>
 
@@ -1731,7 +1731,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   welcomeContainer: {
-    paddingTop: 40,
+    paddingTop: 0,
     marginBottom: 10,
     alignItems: "center",
   },
