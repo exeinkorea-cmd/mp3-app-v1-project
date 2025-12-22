@@ -2141,9 +2141,9 @@ const styles = StyleSheet.create({
   bottomContainer: {
     width: "100%",
     paddingTop: 0,
-    paddingBottom: 20,
+    paddingBottom: 30,
     paddingHorizontal: 20,
-    minHeight: 70,
+    minHeight: 100,
     alignItems: "center",
     justifyContent: "center",
     borderTopWidth: 1,
