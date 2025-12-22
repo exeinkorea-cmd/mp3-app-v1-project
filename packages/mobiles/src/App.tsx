@@ -2140,8 +2140,10 @@ const styles = StyleSheet.create({
   // 바텀 영역 스타일
   bottomContainer: {
     width: "100%",
-    paddingVertical: 15,
+    paddingTop: 0,
+    paddingBottom: 20,
     paddingHorizontal: 20,
+    minHeight: 70,
     alignItems: "center",
     justifyContent: "center",
     borderTopWidth: 1,
