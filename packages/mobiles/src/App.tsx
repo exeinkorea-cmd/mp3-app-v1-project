@@ -49,7 +49,8 @@ import { httpsCallable } from "firebase/functions";
 import { GREETING, UserRole, BaseDepartment, MobileDesignTokens } from "@mp3/common";
 import * as Location from "expo-location";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { NativeModules } from "react-native";
+import { NativeModules, ErrorUtils } from "react-native";
+import ErrorBoundary from "./ErrorBoundary";
 
 interface Bulletin {
   id: string;
@@ -61,6 +62,7 @@ interface Bulletin {
   targetType?: "all" | "company" | "team";
   targetValue?: string | null;
   targetValues?: string[] | null; // 여러 대상 선택 시 사용
+  emergencyAlertId?: string; // 화재 공지 식별용
 }
 
 interface MobileUser {
@@ -1430,8 +1432,14 @@ function BulletinList({
             const displayTitle = getDisplayTitle(item);
             const displayText = getDisplayText(item);
 
+            // 화재 공지인지 확인 (emergencyAlertId가 있으면 화재 공지)
+            const isFireAlert = !!item.emergencyAlertId;
+
             return (
-              <View style={styles.bulletinItem}>
+              <View style={[
+                styles.bulletinItem,
+                isFireAlert && styles.bulletinItemFire
+              ]}>
                 {displayTitle ? (
                   <Text style={styles.bulletinTitle}>{displayTitle}</Text>
                 ) : null}
@@ -1478,6 +1486,46 @@ function BulletinList({
     </View>
   );
 }
+
+// 전역 오류 핸들러
+const sendGlobalErrorReport = async (error: Error, isFatal?: boolean) => {
+  try {
+    const mobileUser = await AsyncStorage.getItem('@mobile_user');
+    let userInfo = null;
+    if (mobileUser) {
+      userInfo = JSON.parse(mobileUser);
+    }
+
+    await addDoc(collection(db, 'errorReports'), {
+      errorMessage: error.message,
+      errorStack: error.stack,
+      isFatal: isFatal || false,
+      userInfo: userInfo,
+      platform: Platform.OS,
+      timestamp: serverTimestamp(),
+    });
+
+    Alert.alert(
+      '오류 리포트 전송',
+      '오류리포트를 전송하였습니다',
+      [{ text: '확인' }]
+    );
+  } catch (reportError) {
+    console.error('오류 리포트 전송 실패:', reportError);
+  }
+};
+
+// 전역 오류 핸들러 설정
+const originalHandler = ErrorUtils.getGlobalHandler();
+ErrorUtils.setGlobalHandler((error: Error, isFatal?: boolean) => {
+  // 오류 리포트 전송
+  sendGlobalErrorReport(error, isFatal);
+  
+  // 원래 핸들러 호출
+  if (originalHandler) {
+    originalHandler(error, isFatal);
+  }
+});
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -1659,45 +1707,47 @@ export default function App() {
   }, [mobileUser?.phoneNumber]);
 
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
-        {user && mobileUser ? (
-          <>
-            <View style={styles.welcomeContainer}>
-              {/* 헤더 텍스트 삭제, 여백만 유지 */}
-            </View>
-            <BulletinList user={user} mobileUser={mobileUser} />
-          </>
-        ) : (
-          <SignInForm />
+    <ErrorBoundary>
+      <SafeAreaView style={styles.safeArea}>
+        <View style={styles.container}>
+          {user && mobileUser ? (
+            <>
+              <View style={styles.welcomeContainer}>
+                {/* 헤더 텍스트 삭제, 여백만 유지 */}
+              </View>
+              <BulletinList user={user} mobileUser={mobileUser} />
+            </>
+          ) : (
+            <SignInForm />
+          )}
+        </View>
+        
+        {/* 저작권 문구 - 로그인 화면일 때만 하단에 표시 */}
+        {!user || !mobileUser ? (
+          <View style={styles.copyrightContainer}>
+            <Text 
+              style={styles.copyrightText}
+              includeFontPadding={false}
+              textAlignVertical="center"
+            >
+              Copyright © 2025 엑스인 세이프티. All rights reserved.
+            </Text>
+          </View>
+        ) : null}
+        
+        {/* 바텀 영역 - 메인페이지에서만 보이도록 */}
+        {user && mobileUser && (
+          <View style={styles.bottomContainer}>
+            <Image
+              source={require("../assets/logo.png")}
+              style={styles.bottomLogo}
+              resizeMode="contain"
+            />
+            <Text style={styles.bottomText}>아테라자이 현장</Text>
+          </View>
         )}
-      </View>
-      
-      {/* 저작권 문구 - 로그인 화면일 때만 하단에 표시 */}
-      {!user || !mobileUser ? (
-        <View style={styles.copyrightContainer}>
-          <Text 
-            style={styles.copyrightText}
-            includeFontPadding={false}
-            textAlignVertical="center"
-          >
-            Copyright © 2025 엑스인 세이프티. All rights reserved.
-          </Text>
-        </View>
-      ) : null}
-      
-      {/* 바텀 영역 - 메인페이지에서만 보이도록 */}
-      {user && mobileUser && (
-        <View style={styles.bottomContainer}>
-          <Image
-            source={require("../assets/logo.png")}
-            style={styles.bottomLogo}
-            resizeMode="contain"
-          />
-          <Text style={styles.bottomText}>아테라자이 현장</Text>
-        </View>
-      )}
-    </SafeAreaView>
+      </SafeAreaView>
+    </ErrorBoundary>
   );
 }
 
@@ -1843,6 +1893,10 @@ const styles = StyleSheet.create({
     borderColor: "#e0e0e0",
     minHeight: 120, // 최소 높이 추가 (3줄 텍스트를 위한 여유 공간)
   },
+  bulletinItemFire: {
+    borderColor: "#DC2626", // red-600
+    borderWidth: 2, // 더 두껍게
+  },
   bulletinTitle: {
     fontSize: 18,
     fontWeight: "bold",
@@ -1915,9 +1969,9 @@ const styles = StyleSheet.create({
   },
   headerButtonWhite: {
     flex: 0.98,
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#10B981", // GS 로고 녹색
     borderWidth: 1,
-    borderColor: "#DDD",
+    borderColor: "#059669", // 녹색 테두리 (green-600)
     borderRadius: 5,
     height: 44,
     paddingVertical: 0,
@@ -1954,7 +2008,7 @@ const styles = StyleSheet.create({
   },
   headerButtonTextBlack: {
     fontSize: 14,
-    color: "#000000",
+    color: "#FFFFFF", // 녹색 배경에 대비되는 흰색
     fontWeight: "500",
   },
   headerButtonTextWhite: {
