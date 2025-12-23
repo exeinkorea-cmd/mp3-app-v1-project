@@ -1530,6 +1530,8 @@ ErrorUtils.setGlobalHandler((error: Error, isFatal?: boolean) => {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [mobileUser, setMobileUser] = useState<MobileUser | null>(null);
+  const [showSplash, setShowSplash] = useState(true); // 스플래시 화면 표시 여부
+  const [splashImageIndex, setSplashImageIndex] = useState(0); // 현재 표시할 이미지 인덱스 (0: gs, 1: exein)
 
   useEffect(() => {
     // Firebase Auth 상태 확인
@@ -1706,47 +1708,81 @@ export default function App() {
     return () => unsubscribe();
   }, [mobileUser?.phoneNumber]);
 
+  // 스플래시 화면 타이머
+  useEffect(() => {
+    if (!showSplash) return;
+
+    // 첫 번째 이미지 (splash-icon-gs) - 2초
+    const timer1 = setTimeout(() => {
+      setSplashImageIndex(1); // 두 번째 이미지로 전환
+    }, 2000);
+
+    // 두 번째 이미지 (splash-icon-exein) - 2초 후 스플래시 종료
+    const timer2 = setTimeout(() => {
+      setShowSplash(false);
+    }, 4000);
+
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
+  }, [showSplash]);
+
   return (
     <ErrorBoundary>
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.container}>
-          {user && mobileUser ? (
-            <>
-              <View style={styles.welcomeContainer}>
-                {/* 헤더 텍스트 삭제, 여백만 유지 */}
-              </View>
-              <BulletinList user={user} mobileUser={mobileUser} />
-            </>
-          ) : (
-            <SignInForm />
-          )}
+      {showSplash ? (
+        <View style={styles.splashContainer}>
+          <Image
+            source={
+              splashImageIndex === 0
+                ? require("../assets/splash-icon-gs.png")
+                : require("../assets/splash-icon-exein.png")
+            }
+            style={styles.splashImage}
+            resizeMode="contain"
+          />
         </View>
-        
-        {/* 저작권 문구 - 로그인 화면일 때만 하단에 표시 */}
-        {!user || !mobileUser ? (
-          <View style={styles.copyrightContainer}>
-            <Text 
-              style={styles.copyrightText}
-              includeFontPadding={false}
-              textAlignVertical="center"
-            >
-              Copyright © 2025 엑스인 세이프티. All rights reserved.
-            </Text>
+      ) : (
+        <SafeAreaView style={styles.safeArea}>
+          <View style={styles.container}>
+            {user && mobileUser ? (
+              <>
+                <View style={styles.welcomeContainer}>
+                  {/* 헤더 텍스트 삭제, 여백만 유지 */}
+                </View>
+                <BulletinList user={user} mobileUser={mobileUser} />
+              </>
+            ) : (
+              <SignInForm />
+            )}
           </View>
-        ) : null}
-        
-        {/* 바텀 영역 - 메인페이지에서만 보이도록 */}
-        {user && mobileUser && (
-          <View style={styles.bottomContainer}>
-            <Image
-              source={require("../assets/logo.png")}
-              style={styles.bottomLogo}
-              resizeMode="contain"
-            />
-            <Text style={styles.bottomText}>아테라자이 현장</Text>
-          </View>
-        )}
-      </SafeAreaView>
+          
+          {/* 저작권 문구 - 로그인 화면일 때만 하단에 표시 */}
+          {!user || !mobileUser ? (
+            <View style={styles.copyrightContainer}>
+              <Text 
+                style={styles.copyrightText}
+                includeFontPadding={false}
+                textAlignVertical="center"
+              >
+                Copyright © 2025 엑스인 세이프티. All rights reserved.
+              </Text>
+            </View>
+          ) : null}
+          
+          {/* 바텀 영역 - 메인페이지에서만 보이도록 */}
+          {user && mobileUser && (
+            <View style={styles.bottomContainer}>
+              <Image
+                source={require("../assets/logo.png")}
+                style={styles.bottomLogo}
+                resizeMode="contain"
+              />
+              <Text style={styles.bottomText}>아테라자이 현장</Text>
+            </View>
+          )}
+        </SafeAreaView>
+      )}
     </ErrorBoundary>
   );
 }
@@ -2247,5 +2283,18 @@ const styles = StyleSheet.create({
     color: "#999999",
     fontWeight: "500",
     lineHeight: 16, // fontSize에 맞게 조정
+  },
+  // 스플래시 화면 스타일
+  splashContainer: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  splashImage: {
+    width: "80%",
+    height: "80%",
+    maxWidth: 300,
+    maxHeight: 300,
   },
 });
