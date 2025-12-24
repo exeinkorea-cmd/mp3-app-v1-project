@@ -1490,7 +1490,7 @@ function BulletinList({
 // 전역 오류 핸들러
 const sendGlobalErrorReport = async (error: Error, isFatal?: boolean) => {
   try {
-    const mobileUser = await AsyncStorage.getItem('@mobile_user');
+    const mobileUser = await AsyncStorage.getItem(STORAGE_KEY);
     let userInfo = null;
     if (mobileUser) {
       userInfo = JSON.parse(mobileUser);
@@ -1515,23 +1515,31 @@ const sendGlobalErrorReport = async (error: Error, isFatal?: boolean) => {
   }
 };
 
-// 전역 오류 핸들러 설정
-const originalHandler = ErrorUtils.getGlobalHandler();
-ErrorUtils.setGlobalHandler((error: Error, isFatal?: boolean) => {
-  // 오류 리포트 전송
-  sendGlobalErrorReport(error, isFatal);
-  
-  // 원래 핸들러 호출
-  if (originalHandler) {
-    originalHandler(error, isFatal);
-  }
-});
-
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [mobileUser, setMobileUser] = useState<MobileUser | null>(null);
   const [showSplash, setShowSplash] = useState(true); // 스플래시 화면 표시 여부
   const [splashImageIndex, setSplashImageIndex] = useState(0); // 현재 표시할 이미지 인덱스 (0: gs, 1: exein)
+
+  // 전역 오류 핸들러 설정 (컴포넌트 마운트 시 안전하게)
+  useEffect(() => {
+    if (typeof ErrorUtils !== 'undefined' && ErrorUtils && ErrorUtils.getGlobalHandler) {
+      try {
+        const originalHandler = ErrorUtils.getGlobalHandler();
+        ErrorUtils.setGlobalHandler((error: Error, isFatal?: boolean) => {
+          // 오류 리포트 전송
+          sendGlobalErrorReport(error, isFatal);
+          
+          // 원래 핸들러 호출
+          if (originalHandler) {
+            originalHandler(error, isFatal);
+          }
+        });
+      } catch (error) {
+        console.warn('전역 오류 핸들러 설정 실패:', error);
+      }
+    }
+  }, []);
 
   useEffect(() => {
     // Firebase Auth 상태 확인
