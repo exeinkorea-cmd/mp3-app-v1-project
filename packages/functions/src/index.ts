@@ -8,6 +8,8 @@ import * as logger from "firebase-functions/logger";
 import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
+import { getStorage } from "firebase-admin/storage";
+import * as XLSX from "xlsx";
 // cors는 lazy loading으로 변경 (배포 타임아웃 방지)
 // GoogleGenerativeAI는 lazy loading으로 변경 (배포 타임아웃 방지)
 
@@ -998,6 +1000,108 @@ export const checkAllWorkersGPSAt1PM = onSchedule(
   },
   async (event) => {
     await checkAllWorkersGPS();
+  }
+);
+
+/**
+ * 출석 데이터를 엑셀 파일로 백업하는 함수
+ */
+async function backupAttendanceDataToExcel() {
+  logger.info("출석 데이터 엑셀 백업 시작");
+
+  try {
+    // 1. 백업 자동 저장 설정 확인
+    const configDoc = await db.collection("settings").doc("site_config").get();
+    if (!configDoc.exists) {
+      logger.warn("현장 설정이 없습니다.");
+      return;
+    }
+
+    const configData = configDoc.data();
+    if (!configData?.autoBackupEnabled) {
+      logger.info("출석 데이터 자동 백업이 비활성화되어 있습니다.");
+      return;
+    }
+
+    // 2. 출석 데이터 조회
+    const checkInsSnapshot = await db.collection("authCheckIns").get();
+    const attendanceData: any[] = [];
+
+    checkInsSnapshot.forEach((doc) => {
+      const data = doc.data();
+      attendanceData.push({
+        이름: data.userName || "",
+        전화번호: data.phoneNumber || "",
+        소속: data.department || "",
+        출근시간: data.timestamp?.toDate().toLocaleString("ko-KR") || "",
+        퇴근시간: data.checkOutTime?.toDate().toLocaleString("ko-KR") || "",
+        고위험작업: data.highRiskWork || "",
+        공지확인: data.noticeConfirmed ? "확인" : "미확인",
+        위도: data.location?.latitude || "",
+        경도: data.location?.longitude || "",
+      });
+    });
+
+    // 3. 엑셀 파일 생성
+    const worksheet = XLSX.utils.json_to_sheet(attendanceData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, "출석데이터");
+
+    const excelBuffer = XLSX.write(workbook, {
+      type: "buffer",
+      bookType: "xlsx",
+    });
+
+    // 4. Firebase Storage에 업로드
+    const bucket = getStorage().bucket();
+    const now = new Date();
+    const dateStr = now.toISOString().split("T")[0];
+    const timeStr = now.toTimeString().split(" ")[0].replace(/:/g, "-");
+    const folderPath = configData.backupFolderPath || "attendance-backups";
+    const fileName = `${folderPath}/attendance_${dateStr}_${timeStr}.xlsx`;
+
+    const file = bucket.file(fileName);
+    await file.save(excelBuffer, {
+      metadata: {
+        contentType:
+          "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      },
+    });
+
+    logger.info(
+      `✅ 출석 데이터 엑셀 백업 완료: ${fileName} (${attendanceData.length}건)`
+    );
+  } catch (error) {
+    logger.error("출석 데이터 엑셀 백업 오류:", error);
+    throw error;
+  }
+}
+
+/**
+ * 매일 10:50에 실행되는 출석 데이터 백업 함수
+ */
+export const backupAttendanceDataAt1050 = onSchedule(
+  {
+    schedule: "50 1 * * *", // UTC 1:50 = 한국시간 10:50 (UTC+9)
+    timeZone: "Asia/Seoul",
+    region: "us-central1",
+  },
+  async (event) => {
+    await backupAttendanceDataToExcel();
+  }
+);
+
+/**
+ * 매일 13:50에 실행되는 출석 데이터 백업 함수
+ */
+export const backupAttendanceDataAt1350 = onSchedule(
+  {
+    schedule: "50 4 * * *", // UTC 4:50 = 한국시간 13:50 (UTC+9)
+    timeZone: "Asia/Seoul",
+    region: "us-central1",
+  },
+  async (event) => {
+    await backupAttendanceDataToExcel();
   }
 );
 
