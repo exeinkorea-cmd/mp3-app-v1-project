@@ -1234,43 +1234,118 @@ export const onEmergencyAlertCreated = onDocumentCreated(
 );
 
 /**
- * 날씨 경고 메시지 생성 함수
- * 체감온도에 따라 적절한 경고 메시지를 반환합니다.
+ * 날씨 경고 메시지 생성 함수 (다국어 지원)
+ * 체감온도에 따라 적절한 경고 메시지를 다국어로 반환합니다.
  */
-function getWeatherAlertMessage(feelsLike: number): { title: string; content: string } | null {
+function getWeatherAlertMessage(feelsLike: number): {
+  titleTranslations: Record<string, string>;
+  contentTranslations: Record<string, string>;
+} | null {
   // 폭염 경고 (높은 온도부터 체크)
   if (feelsLike >= 38) {
     return {
-      title: "🚨 [긴급] 폭염 위험",
-      content: `현재 체감온도가 ${feelsLike}°C입니다. 긴급 작업 외 옥외작업을 중지해주세요. (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+      titleTranslations: {
+        ko: "🚨 [긴급] 폭염 위험",
+        en: "🚨 [Emergency] Extreme Heat Warning",
+        zh: "🚨 [紧急] 极端高温警告",
+        vi: "🚨 [Khẩn cấp] Cảnh báo nắng nóng cực độ",
+        ru: "🚨 [Срочно] Предупреждение об экстремальной жаре",
+      },
+      contentTranslations: {
+        ko: `현재 체감온도가 ${feelsLike}°C입니다. 긴급 작업 외 옥외작업을 중지해주세요. (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+        en: `Current feels-like temperature is ${feelsLike}°C. Please stop outdoor work except for emergency tasks. (The actual feels-like temperature at the site may differ.)`,
+        zh: `当前体感温度为 ${feelsLike}°C。除紧急作业外，请停止户外作业。（实际现场的体感温度可能有所不同。）`,
+        vi: `Nhiệt độ cảm nhận hiện tại là ${feelsLike}°C. Vui lòng dừng công việc ngoài trời ngoại trừ các nhiệm vụ khẩn cấp. (Nhiệt độ cảm nhận thực tế tại hiện trường có thể khác.)`,
+        ru: `Текущая температура по ощущениям составляет ${feelsLike}°C. Пожалуйста, прекратите работу на открытом воздухе, кроме аварийных задач. (Фактическая температура по ощущениям на объекте может отличаться.)`,
+      },
     };
   } else if (feelsLike >= 35 && feelsLike <= 37) {
     return {
-      title: "🚨 [긴급] 폭염 경고",
-      content: `현재 체감온도가 ${feelsLike}°C입니다. 1시간마다 15분씩 그늘에서 쉬고, 가능하면 옥외작업을 피해주세요. (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+      titleTranslations: {
+        ko: "🚨 [긴급] 폭염 경고",
+        en: "🚨 [Emergency] Heat Warning",
+        zh: "🚨 [紧急] 高温警告",
+        vi: "🚨 [Khẩn cấp] Cảnh báo nắng nóng",
+        ru: "🚨 [Срочно] Предупреждение о жаре",
+      },
+      contentTranslations: {
+        ko: `현재 체감온도가 ${feelsLike}°C입니다. 1시간마다 15분씩 그늘에서 쉬고, 가능하면 옥외작업을 피해주세요. (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+        en: `Current feels-like temperature is ${feelsLike}°C. Please rest in the shade for 15 minutes every hour and avoid outdoor work if possible. (The actual feels-like temperature at the site may differ.)`,
+        zh: `当前体感温度为 ${feelsLike}°C。请每小时在阴凉处休息15分钟，如有可能，请避免户外作业。（实际现场的体感温度可能有所不同。）`,
+        vi: `Nhiệt độ cảm nhận hiện tại là ${feelsLike}°C. Vui lòng nghỉ ngơi trong bóng râm 15 phút mỗi giờ và tránh công việc ngoài trời nếu có thể. (Nhiệt độ cảm nhận thực tế tại hiện trường có thể khác.)`,
+        ru: `Текущая температура по ощущениям составляет ${feelsLike}°C. Пожалуйста, отдыхайте в тени по 15 минут каждый час и по возможности избегайте работы на открытом воздухе. (Фактическая температура по ощущениям на объекте может отличаться.)`,
+      },
     };
   } else if (feelsLike >= 33 && feelsLike <= 34) {
     return {
-      title: "🚨 [긴급] 폭염 주의",
-      content: `현재 체감온도가 ${feelsLike}°C입니다. 2시간마다 20분 이상의 휴식 부여 (혹은 1시간마다 10분 휴식 등 대체 가능). 오후 2시~5시 옥외작업 단축 또는 시간 조정을 해주세요! (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+      titleTranslations: {
+        ko: "🚨 [긴급] 폭염 주의",
+        en: "🚨 [Emergency] Heat Caution",
+        zh: "🚨 [紧急] 高温注意",
+        vi: "🚨 [Khẩn cấp] Cảnh giác nắng nóng",
+        ru: "🚨 [Срочно] Осторожность при жаре",
+      },
+      contentTranslations: {
+        ko: `현재 체감온도가 ${feelsLike}°C입니다. 2시간마다 20분 이상의 휴식 부여 (혹은 1시간마다 10분 휴식 등 대체 가능). 오후 2시~5시 옥외작업 단축 또는 시간 조정을 해주세요! (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+        en: `Current feels-like temperature is ${feelsLike}°C. Please provide at least 20 minutes of rest every 2 hours (or 10 minutes every hour as an alternative). Please reduce or adjust outdoor work hours between 2 PM and 5 PM! (The actual feels-like temperature at the site may differ.)`,
+        zh: `当前体感温度为 ${feelsLike}°C。请每2小时提供至少20分钟的休息（或每小时10分钟作为替代）。请缩短或调整下午2点至5点的户外作业时间！（实际现场的体感温度可能有所不同。）`,
+        vi: `Nhiệt độ cảm nhận hiện tại là ${feelsLike}°C. Vui lòng cung cấp ít nhất 20 phút nghỉ ngơi mỗi 2 giờ (hoặc 10 phút mỗi giờ như một lựa chọn thay thế). Vui lòng giảm hoặc điều chỉnh giờ làm việc ngoài trời giữa 2 giờ chiều và 5 giờ chiều! (Nhiệt độ cảm nhận thực tế tại hiện trường có thể khác.)`,
+        ru: `Текущая температура по ощущениям составляет ${feelsLike}°C. Пожалуйста, предоставляйте не менее 20 минут отдыха каждые 2 часа (или 10 минут каждый час в качестве альтернативы). Пожалуйста, сократите или скорректируйте часы работы на открытом воздухе с 14:00 до 17:00! (Фактическая температура по ощущениям на объекте может отличаться.)`,
+      },
     };
   } else if (feelsLike >= 31 && feelsLike <= 32) {
     return {
-      title: "🚨 [긴급] 폭염 주의보",
-      content: `현재 체감온도가 ${feelsLike}°C입니다. 냉방, 통풍, 작업시간 조정, 주기적 휴식 등 폭염 노출에 주의해주세요! (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+      titleTranslations: {
+        ko: "🚨 [긴급] 폭염 주의보",
+        en: "🚨 [Emergency] Heat Advisory",
+        zh: "🚨 [紧急] 高温注意",
+        vi: "🚨 [Khẩn cấp] Cảnh báo nắng nóng",
+        ru: "🚨 [Срочно] Рекомендация по жаре",
+      },
+      contentTranslations: {
+        ko: `현재 체감온도가 ${feelsLike}°C입니다. 냉방, 통풍, 작업시간 조정, 주기적 휴식 등 폭염 노출에 주의해주세요! (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+        en: `Current feels-like temperature is ${feelsLike}°C. Please be cautious about heat exposure with air conditioning, ventilation, work schedule adjustments, and regular breaks! (The actual feels-like temperature at the site may differ.)`,
+        zh: `当前体感温度为 ${feelsLike}°C。请注意防暑，包括空调、通风、工作时间调整和定期休息！（实际现场的体感温度可能有所不同。）`,
+        vi: `Nhiệt độ cảm nhận hiện tại là ${feelsLike}°C. Vui lòng thận trọng về việc tiếp xúc với nắng nóng với điều hòa không khí, thông gió, điều chỉnh lịch làm việc và nghỉ ngơi thường xuyên! (Nhiệt độ cảm nhận thực tế tại hiện trường có thể khác.)`,
+        ru: `Текущая температура по ощущениям составляет ${feelsLike}°C. Пожалуйста, будьте осторожны с воздействием жары, используя кондиционирование воздуха, вентиляцию, корректировку рабочего графика и регулярные перерывы! (Фактическая температура по ощущениям на объекте может отличаться.)`,
+      },
     };
   }
   
   // 한파 경고 (낮은 온도부터 체크)
   else if (feelsLike <= -12) {
     return {
-      title: "🚨 [긴급] 한파 주의보",
-      content: `현재 체감온도가 ${feelsLike}°C입니다. 휴게실에서 충분히 휴식을 취하고 긴급 작업 외 옥외작업을 중지해주세요. (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+      titleTranslations: {
+        ko: "🚨 [긴급] 한파 주의보",
+        en: "🚨 [Emergency] Cold Wave Warning",
+        zh: "🚨 [紧急] 寒潮警告",
+        vi: "🚨 [Khẩn cấp] Cảnh báo sóng lạnh",
+        ru: "🚨 [Срочно] Предупреждение о холодной волне",
+      },
+      contentTranslations: {
+        ko: `현재 체감온도가 ${feelsLike}°C입니다. 휴게실에서 충분히 휴식을 취하고 긴급 작업 외 옥외작업을 중지해주세요. (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+        en: `Current feels-like temperature is ${feelsLike}°C. Please rest sufficiently in the break room and stop outdoor work except for emergency tasks. (The actual feels-like temperature at the site may differ.)`,
+        zh: `当前体感温度为 ${feelsLike}°C。请在休息室充分休息，除紧急作业外，请停止户外作业。（实际现场的体感温度可能有所不同。）`,
+        vi: `Nhiệt độ cảm nhận hiện tại là ${feelsLike}°C. Vui lòng nghỉ ngơi đầy đủ trong phòng nghỉ và dừng công việc ngoài trời ngoại trừ các nhiệm vụ khẩn cấp. (Nhiệt độ cảm nhận thực tế tại hiện trường có thể khác.)`,
+        ru: `Текущая температура по ощущениям составляет ${feelsLike}°C. Пожалуйста, достаточно отдыхайте в комнате отдыха и прекратите работу на открытом воздухе, кроме аварийных задач. (Фактическая температура по ощущениям на объекте может отличаться.)`,
+      },
     };
   } else if (feelsLike >= -11 && feelsLike <= -6) {
     return {
-      title: "🚨 [긴급] 한파 관심",
-      content: `현재 체감온도가 ${feelsLike}°C입니다. 휴게실에서 충분히 휴식을 취하고 따뜻한 물을 주기적으로 섭취하세요. (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+      titleTranslations: {
+        ko: "🚨 [긴급] 한파 관심",
+        en: "🚨 [Emergency] Cold Wave Advisory",
+        zh: "🚨 [紧急] 寒潮注意",
+        vi: "🚨 [Khẩn cấp] Cảnh báo sóng lạnh",
+        ru: "🚨 [Срочно] Рекомендация по холодной волне",
+      },
+      contentTranslations: {
+        ko: `현재 체감온도가 ${feelsLike}°C입니다. 휴게실에서 충분히 휴식을 취하고 따뜻한 물을 주기적으로 섭취하세요. (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+        en: `Current feels-like temperature is ${feelsLike}°C. Please rest sufficiently in the break room and drink warm water regularly. (The actual feels-like temperature at the site may differ.)`,
+        zh: `当前体感温度为 ${feelsLike}°C。请在休息室充分休息，并定期饮用温水。（实际现场的体感温度可能有所不同。）`,
+        vi: `Nhiệt độ cảm nhận hiện tại là ${feelsLike}°C. Vui lòng nghỉ ngơi đầy đủ trong phòng nghỉ và uống nước ấm thường xuyên. (Nhiệt độ cảm nhận thực tế tại hiện trường có thể khác.)`,
+        ru: `Текущая температура по ощущениям составляет ${feelsLike}°C. Пожалуйста, достаточно отдыхайте в комнате отдыха и регулярно пейте теплую воду. (Фактическая температура по ощущениям на объекте может отличаться.)`,
+      },
     };
   }
   
@@ -1321,7 +1396,7 @@ export const checkWeatherAndSendAlert = onSchedule(
 
       logger.info(`현재 체감온도: ${feelsLike}°C`);
 
-      // 3. 경고 메시지 확인
+      // 3. 경고 메시지 확인 (다국어 번역 포함)
       const alertMessage = getWeatherAlertMessage(feelsLike);
       if (!alertMessage) {
         logger.info("경고 조건에 해당하지 않습니다.");
@@ -1336,7 +1411,7 @@ export const checkWeatherAndSendAlert = onSchedule(
       const existingAlerts = await db
         .collection("bulletins")
         .where("createdAt", ">=", todayStart)
-        .where("title", "==", alertMessage.title)
+        .where("title", "==", alertMessage.titleTranslations.ko)
         .where("isWeatherAlert", "==", true)
         .get();
 
@@ -1345,28 +1420,12 @@ export const checkWeatherAndSendAlert = onSchedule(
         return;
       }
 
-      // 5. 공지사항 생성 (화재 알림과 동일한 스타일)
-      const titleTranslations = {
-        ko: alertMessage.title,
-        en: alertMessage.title,
-        zh: alertMessage.title,
-        vi: alertMessage.title,
-        ru: alertMessage.title,
-      };
-
-      const contentTranslations = {
-        ko: alertMessage.content,
-        en: alertMessage.content,
-        zh: alertMessage.content,
-        vi: alertMessage.content,
-        ru: alertMessage.content,
-      };
-
+      // 5. 공지사항 생성 (다국어 번역 포함)
       await db.collection("bulletins").add({
-        title: titleTranslations.ko,
-        originalText: contentTranslations.ko,
-        titleTranslations: titleTranslations,
-        contentTranslations: contentTranslations,
+        title: alertMessage.titleTranslations.ko,
+        originalText: alertMessage.contentTranslations.ko,
+        titleTranslations: alertMessage.titleTranslations,
+        contentTranslations: alertMessage.contentTranslations,
         targetType: "all",
         targetValues: [],
         isPersistent: true, // 상단 고정
@@ -1376,7 +1435,7 @@ export const checkWeatherAndSendAlert = onSchedule(
         createdBy: "system",
       });
 
-      logger.info(`✅ 날씨 경고 공지 발송 완료: ${alertMessage.title}`);
+      logger.info(`✅ 날씨 경고 공지 발송 완료: ${alertMessage.titleTranslations.ko}`);
     } catch (error) {
       logger.error("날씨 체크 및 경고 발송 오류:", error);
     }
