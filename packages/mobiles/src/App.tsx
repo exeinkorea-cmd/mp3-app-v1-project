@@ -1300,7 +1300,13 @@ function BulletinList({
             // 1. 전화 연결
             await Linking.openURL("tel:119");
 
-            // 2. Firestore에 긴급 알림 문서 생성
+            // 2. 현재 위치 가져오기 (신고 시점의 위치)
+            const location = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+            });
+            const { latitude, longitude } = location.coords;
+
+            // 3. Firestore에 긴급 알림 문서 생성
             const department = mobileUser.teamName
               ? `${mobileUser.companyName} - ${mobileUser.teamName}`
               : mobileUser.companyName;
@@ -1309,6 +1315,7 @@ function BulletinList({
               userName: mobileUser.name || "알 수 없음",
               department: department || "알 수 없음",
               phoneNumber: mobileUser.phoneNumber || "",
+              location: { latitude, longitude }, // 신고 시점의 현재 위치
               timestamp: serverTimestamp(),
             });
 
@@ -1341,7 +1348,13 @@ function BulletinList({
             // 1. 전화 연결
             await Linking.openURL("tel:02-2154-9717");
 
-            // 2. Firestore에 해피콜 요청 문서 생성
+            // 2. 현재 위치 가져오기 (요청 시점의 위치)
+            const location = await Location.getCurrentPositionAsync({
+              accuracy: Location.Accuracy.Balanced,
+            });
+            const { latitude, longitude } = location.coords;
+
+            // 3. Firestore에 해피콜 요청 문서 생성
             const department = mobileUser.teamName
               ? `${mobileUser.companyName} - ${mobileUser.teamName}`
               : mobileUser.companyName;
@@ -1350,6 +1363,7 @@ function BulletinList({
               userName: mobileUser.name || "알 수 없음",
               department: department || "알 수 없음",
               phoneNumber: mobileUser.phoneNumber || "",
+              location: { latitude, longitude }, // 요청 시점의 현재 위치
               timestamp: serverTimestamp(),
             });
 

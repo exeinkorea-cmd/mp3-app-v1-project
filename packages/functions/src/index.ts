@@ -14,8 +14,16 @@ import { FieldValue } from "firebase-admin/firestore";
 // ============================================================================
 // [Critical Fix] Google Cloud 권장: Standard Global Initialization
 // 전역 스코프에서 무조건 초기화합니다. (조건문 없이 강제 실행)
+// 중복 초기화 방지를 위해 try-catch 추가
 // ============================================================================
-admin.initializeApp();
+try {
+  admin.initializeApp();
+} catch (error: any) {
+  // 이미 초기화된 경우 무시
+  if (error.code !== "app/duplicate-app") {
+    throw error;
+  }
+}
 
 // 전역 인스턴스 사용 가능 (반드시 initializeApp 이후에 선언)
 const db = admin.firestore();
