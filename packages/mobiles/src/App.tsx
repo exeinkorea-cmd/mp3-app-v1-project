@@ -65,6 +65,7 @@ interface Bulletin {
   targetValue?: string | null;
   targetValues?: string[] | null; // 여러 대상 선택 시 사용
   emergencyAlertId?: string; // 화재 공지 식별용
+  isWeatherAlert?: boolean; // 날씨 경고 공지 식별용
 }
 
 interface MobileUser {
@@ -896,8 +897,12 @@ function BulletinList({
           // 초기 로드가 아니고, 새로 추가된 공지인지 확인
           if (!isInitialLoad && !previousBulletinIds.has(doc.id)) {
             // 이전에 없던 공지 = 새 공지
+            // 화재 알림 또는 날씨 경고인 경우 알람 소리 재생
             const isFireAlert = !!data.emergencyAlertId;
-            playNotificationSound(isFireAlert);
+            const isWeatherAlert = !!data.isWeatherAlert;
+            if (isFireAlert || isWeatherAlert) {
+              playNotificationSound(true); // 화재와 동일한 소리
+            }
           }
         }
       });
@@ -1512,13 +1517,15 @@ function BulletinList({
             const displayTitle = getDisplayTitle(item);
             const displayText = getDisplayText(item);
 
-            // 화재 공지인지 확인 (emergencyAlertId가 있으면 화재 공지)
+            // 화재 공지 또는 날씨 경고인지 확인
             const isFireAlert = !!item.emergencyAlertId;
+            const isWeatherAlert = !!item.isWeatherAlert;
+            const isAlert = isFireAlert || isWeatherAlert;
 
             return (
               <View style={[
                 styles.bulletinItem,
-                isFireAlert && styles.bulletinItemFire
+                isAlert && styles.bulletinItemFire
               ]}>
                 {displayTitle ? (
                   <Text style={styles.bulletinTitle}>{displayTitle}</Text>

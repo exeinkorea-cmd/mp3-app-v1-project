@@ -1222,3 +1222,153 @@ export const onEmergencyAlertCreated = onDocumentCreated(
     }
   }
 );
+
+/**
+ * 날씨 경고 메시지 생성 함수
+ * 체감온도에 따라 적절한 경고 메시지를 반환합니다.
+ */
+function getWeatherAlertMessage(feelsLike: number): { title: string; content: string } | null {
+  // 폭염 경고 (높은 온도부터 체크)
+  if (feelsLike >= 38) {
+    return {
+      title: "🚨 [긴급] 폭염 위험",
+      content: `현재 체감온도가 ${feelsLike}°C입니다. 긴급 작업 외 옥외작업을 중지해주세요. (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+    };
+  } else if (feelsLike >= 35 && feelsLike <= 37) {
+    return {
+      title: "🚨 [긴급] 폭염 경고",
+      content: `현재 체감온도가 ${feelsLike}°C입니다. 1시간마다 15분씩 그늘에서 쉬고, 가능하면 옥외작업을 피해주세요. (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+    };
+  } else if (feelsLike >= 33 && feelsLike <= 34) {
+    return {
+      title: "🚨 [긴급] 폭염 주의",
+      content: `현재 체감온도가 ${feelsLike}°C입니다. 2시간마다 20분 이상의 휴식 부여 (혹은 1시간마다 10분 휴식 등 대체 가능). 오후 2시~5시 옥외작업 단축 또는 시간 조정을 해주세요! (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+    };
+  } else if (feelsLike >= 31 && feelsLike <= 32) {
+    return {
+      title: "🚨 [긴급] 폭염 주의보",
+      content: `현재 체감온도가 ${feelsLike}°C입니다. 냉방, 통풍, 작업시간 조정, 주기적 휴식 등 폭염 노출에 주의해주세요! (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+    };
+  }
+  
+  // 한파 경고 (낮은 온도부터 체크)
+  else if (feelsLike <= -12) {
+    return {
+      title: "🚨 [긴급] 한파 주의보",
+      content: `현재 체감온도가 ${feelsLike}°C입니다. 휴게실에서 충분히 휴식을 취하고 긴급 작업 외 옥외작업을 중지해주세요. (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+    };
+  } else if (feelsLike >= -11 && feelsLike <= -6) {
+    return {
+      title: "🚨 [긴급] 한파 관심",
+      content: `현재 체감온도가 ${feelsLike}°C입니다. 휴게실에서 충분히 휴식을 취하고 따뜻한 물을 주기적으로 섭취하세요. (실제 현장의 체감온도와 차이가 있을 수 있습니다.)`,
+    };
+  }
+  
+  return null;
+}
+
+/**
+ * 매시간 날씨 체크 및 경고 발송
+ * 매시간 정각마다 실행되어 체감온도를 확인하고 조건에 맞으면 공지사항을 발송합니다.
+ */
+export const checkWeatherAndSendAlert = onSchedule(
+  {
+    schedule: "0 * * * *", // 매시간 정각
+    timeZone: "Asia/Seoul",
+    region: "us-central1",
+  },
+  async (event) => {
+    logger.info("🌤️ 날씨 체크 시작");
+
+    try {
+      // 1. 현장 설정 가져오기
+      const configDoc = await db.collection("settings").doc("site_config").get();
+      if (!configDoc.exists) {
+        logger.warn("현장 설정이 없습니다.");
+        return;
+      }
+
+      const siteConfig = configDoc.data() as {
+        center: { latitude: number; longitude: number };
+        allowedRadiusMeters: number;
+      };
+
+      // 2. 날씨 API 호출
+      const API_KEY = "06abc1820848cca6cc759c3dba2c1c18";
+      const lat = siteConfig.center.latitude;
+      const lon = siteConfig.center.longitude;
+      const url = `https://api.openweathermap.org/data/2.5/weather?lat=${lat}&lon=${lon}&appid=${API_KEY}&units=metric&lang=kr`;
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`날씨 API 오류: ${response.status}`);
+      }
+
+      const data = (await response.json()) as {
+        main: { feels_like: number };
+      };
+      const feelsLike = Math.round(data.main.feels_like);
+
+      logger.info(`현재 체감온도: ${feelsLike}°C`);
+
+      // 3. 경고 메시지 확인
+      const alertMessage = getWeatherAlertMessage(feelsLike);
+      if (!alertMessage) {
+        logger.info("경고 조건에 해당하지 않습니다.");
+        return;
+      }
+
+      // 4. 오늘 이미 같은 경고를 보냈는지 확인 (중복 방지)
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const todayStart = admin.firestore.Timestamp.fromDate(today);
+
+      const existingAlerts = await db
+        .collection("bulletins")
+        .where("createdAt", ">=", todayStart)
+        .where("title", "==", alertMessage.title)
+        .where("isWeatherAlert", "==", true)
+        .get();
+
+      if (!existingAlerts.empty) {
+        logger.info("오늘 이미 같은 경고를 발송했습니다. 중복 발송을 건너뜁니다.");
+        return;
+      }
+
+      // 5. 공지사항 생성 (화재 알림과 동일한 스타일)
+      const titleTranslations = {
+        ko: alertMessage.title,
+        en: alertMessage.title,
+        zh: alertMessage.title,
+        vi: alertMessage.title,
+        ru: alertMessage.title,
+      };
+
+      const contentTranslations = {
+        ko: alertMessage.content,
+        en: alertMessage.content,
+        zh: alertMessage.content,
+        vi: alertMessage.content,
+        ru: alertMessage.content,
+      };
+
+      await db.collection("bulletins").add({
+        title: titleTranslations.ko,
+        originalText: contentTranslations.ko,
+        titleTranslations: titleTranslations,
+        contentTranslations: contentTranslations,
+        targetType: "all",
+        targetValues: [],
+        isPersistent: true, // 상단 고정
+        isWeatherAlert: true, // 날씨 경고 표시
+        weatherAlertType: feelsLike >= 31 ? "heat" : "cold", // 폭염/한파 구분
+        createdAt: FieldValue.serverTimestamp(),
+        createdBy: "system",
+      });
+
+      logger.info(`✅ 날씨 경고 공지 발송 완료: ${alertMessage.title}`);
+    } catch (error) {
+      logger.error("날씨 체크 및 경고 발송 오류:", error);
+    }
+  }
+);
