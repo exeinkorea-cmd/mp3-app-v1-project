@@ -1,0 +1,750 @@
+================================================================================
+Web CMS AttendanceList 및 챗봇 로직 상세 분석
+작성일: 2025-12-26
+================================================================================
+
+1. 개요
+================================================================================
+
+AttendanceList 컴포넌트는 웹 CMS의 출석 현황을 실시간으로 표시하고, 
+AI 챗봇을 통해 자연어 질문으로 데이터를 필터링/정렬하는 기능을 제공합니다.
+
+주요 기능:
+- Firestore 실시간 데이터 수신 (onSnapshot)
+- AI 기반 자연어 질문 처리 (Google Gemini API)
+- 동적 컬럼 표시/숨김
+- 필터링 및 정렬
+- 공지사항 통합 표시
+
+
+2. 파일 구조 및 위치
+================================================================================
+
+[컴포넌트]
+- packages/web-cms/src/components/AttendanceList.tsx
+
+[유틸리티]
+- packages/web-cms/src/utils/gemini.ts
+
+[타입 정의]
+- packages/web-cms/src/types/index.ts
+
+[서버 함수 (선택적)]
+- packages/functions/src/index.ts (analyzeAttendanceQuery)
+
+
+3. 데이터 구조 및 타입 정의
+================================================================================
+
+3.1. AuthCheckIn 인터페이스 (Firestore 문서)
+--------------------------------------------------------
+위치: packages/web-cms/src/types/index.ts
+
+interface AuthCheckIn {
+  id: string;                          // 문서 ID
+  userName?: string;                    // 사용자 이름
+  phoneNumber?: string;                 // 전화번호
+  department?: string;                  // 소속 (형식: "회사명 - 팀명" 또는 "회사명")
+  timestamp?: Timestamp;                // 출근시간 (Firestore Timestamp)
+  highRiskWork?: string;                // 고위험 작업
+  highRiskWorkUpdatedAt?: Timestamp;    // 고위험 작업 업데이트 시간
+  noticeConfirmed?: boolean;             // [Deprecated] 공지 확인 여부 (하위 호환성)
+  noticeHistory?: Array<{                // 공지 이력 배열
+    id: string;                         // bulletin ID
+    title: string;                       // 공지 제목
+    confirmed: boolean;                  // 확인 여부
+    sentAt: Timestamp;                   // 발송 시간
+  }>;
+  checkOutTime?: Timestamp;              // 퇴근시간
+  location?: {                           // GPS 위치
+    latitude: number;
+    longitude: number;
+  };
+}
+
+Firestore 컬렉션: "authCheckIns"
+정렬: timestamp 기준 내림차순 (최신순)
+
+
+3.2. ALL_COLUMNS 상수 (컬럼 정의)
+--------------------------------------------------------
+위치: AttendanceList.tsx (라인 21-30)
+
+const ALL_COLUMNS: Record<string, { label: string; key: keyof AuthCheckIn }> = {
+  userName: { label: "이름", key: "userName" },
+  phoneNumber: { label: "전화번호", key: "phoneNumber" },
+  department: { label: "소속", key: "department" },
+  timestamp: { label: "출근시간", key: "timestamp" },
+  checkOutTime: { label: "퇴근시간", key: "checkOutTime" },
+  highRiskWork: { label: "고위험 작업", key: "highRiskWork" },
+  noticeConfirmed: { label: "공지 확인", key: "noticeConfirmed" },
+  noticeTitle: { label: "공지 제목", key: "noticeTitle" as keyof AuthCheckIn },
+};
+
+컬럼명 매핑:
+- 컬럼 키 (key) → AuthCheckIn 필드명
+- label → UI에 표시되는 한글 라벨
+- noticeTitle은 가상 컬럼 (noticeHistory 배열에서 추출)
+
+
+3.3. Department 인터페이스
+--------------------------------------------------------
+위치: packages/web-cms/src/types/index.ts
+
+interface Department extends BaseDepartment {
+  id: string;
+  name: string;
+  type: "company" | "team";
+  parentId?: string;  // 팀인 경우 부모 업체 ID
+  createdAt: Timestamp;
+}
+
+Firestore 컬렉션: "departments"
+
+
+4. 컴포넌트 상태 변수
+================================================================================
+
+4.1. 데이터 상태
+--------------------------------------------------------
+const [checkIns, setCheckIns] = useState<AuthCheckIn[]>([]);
+- 출석 데이터 배열 (실시간 업데이트)
+- Firestore onSnapshot으로 자동 갱신
+
+const [departments, setDepartments] = useState<Department[]>([]);
+- 업체/팀 목록 (테스트 데이터 생성 시 사용)
+
+
+4.2. 챗봇 관련 상태
+--------------------------------------------------------
+const [chatInput, setChatInput] = useState<string>("");
+- 사용자 입력 텍스트
+
+const [aiMessage, setAiMessage] = useState<string>("");
+- AI 응답 메시지 (현재 주석 처리되어 표시 안 됨)
+
+const [activeColumns, setActiveColumns] = useState<string[]>(Object.keys(ALL_COLUMNS));
+- 현재 표시할 컬럼 키 배열
+- 초기값: 모든 컬럼 표시
+- AI 응답에 따라 동적으로 변경
+
+const [filterConditions, setFilterConditions] = useState<Record<string, string>>({});
+- 필터 조건 객체
+- 형식: { "department": "삼성물산", "timestamp": "before:09:00" }
+- 키: AuthCheckIn 필드명
+- 값: 필터링할 값 (문자열)
+
+const [sortBy, setSortBy] = useState<string>("timestamp");
+- 정렬 기준 필드명
+- 기본값: "timestamp"
+
+const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+- 정렬 순서
+- 기본값: "desc" (내림차순)
+
+const [loading, setLoading] = useState<boolean>(false);
+- 로딩 상태 (AI 요청 중)
+
+
+4.3. 현장 설정 상태
+--------------------------------------------------------
+const [isSettingsModalOpen, setIsSettingsModalOpen] = useState<boolean>(false);
+- 현장 설정 모달 표시 여부
+
+const [siteConfig, setSiteConfig] = useState<SiteConfig>({
+  center: { latitude: 37.536111, longitude: 126.833333 },
+  allowedRadiusMeters: 500,
+});
+- 현장 중심 좌표 및 인정 범위
+- Firestore "settings/site_config" 문서에 저장
+
+
+5. 데이터 수신 로직
+================================================================================
+
+5.1. authCheckIns 실시간 수신
+--------------------------------------------------------
+위치: AttendanceList.tsx (라인 130-152)
+
+useEffect(() => {
+  const q = query(
+    collection(db, "authCheckIns"),
+    orderBy("timestamp", "desc")
+  );
+
+  const unsubscribe = onSnapshot(
+    q,
+    (querySnapshot) => {
+      const docs: AuthCheckIn[] = [];
+      querySnapshot.forEach((doc) => {
+        docs.push({ id: doc.id, ...doc.data() } as AuthCheckIn);
+      });
+      setCheckIns(docs);
+    },
+    (error) => {
+      console.error("출역 데이터 수신 오류:", error);
+    }
+  );
+
+  return () => unsubscribe();
+}, []);
+
+동작:
+1. Firestore "authCheckIns" 컬렉션 쿼리 생성
+2. timestamp 기준 내림차순 정렬
+3. onSnapshot으로 실시간 감시 시작
+4. 변경사항 발생 시 checkIns 상태 업데이트
+5. 컴포넌트 언마운트 시 구독 해제
+
+
+5.2. departments 실시간 수신
+--------------------------------------------------------
+위치: AttendanceList.tsx (라인 76-92)
+
+useEffect(() => {
+  const q = collection(db, "departments");
+  const unsubscribe = onSnapshot(
+    q,
+    (querySnapshot) => {
+      const deptList: Department[] = [];
+      querySnapshot.forEach((doc) => {
+        deptList.push({ id: doc.id, ...doc.data() } as Department);
+      });
+      setDepartments(deptList);
+    },
+    (error) => {
+      console.error("departments 데이터 수신 오류:", error);
+    }
+  );
+  return () => unsubscribe();
+}, []);
+
+용도: 테스트 데이터 생성 시 실제 업체/팀 정보 사용
+
+
+6. 챗봇 질문 처리 로직 (handleAskAI)
+================================================================================
+
+위치: AttendanceList.tsx (라인 177-252)
+
+6.1. 전체 흐름
+--------------------------------------------------------
+1. 입력값 검증 (trim 후 빈 문자열 체크)
+2. 공지 조회 키워드 감지
+3. 공지 조회 또는 출석 조회 분기
+4. AI 응답 파싱 및 상태 업데이트
+
+
+6.2. 공지 조회 키워드 감지
+--------------------------------------------------------
+const noticeKeywords = [
+  "공지", "확인", "알림", "전달사항", "공지사항", "notice"
+];
+const isNoticeQuery = noticeKeywords.some((keyword) =>
+  chatInput.toLowerCase().includes(keyword)
+);
+
+동작:
+- 입력값에 공지 관련 키워드가 포함되어 있으면
+- askGeminiForNoticeStatus() 호출
+- 마크다운 테이블 형식으로 응답 반환
+- aiMessage 상태에 저장 (현재 UI에 표시 안 됨)
+
+
+6.3. 출석 조회 로직
+--------------------------------------------------------
+if (!isNoticeQuery) {
+  // 1. AI 함수 호출
+  const result = await askGeminiForAttendance(chatInput.trim());
+  
+  // 2. 응답 구조 분해
+  let {
+    columns,        // 표시할 컬럼 배열
+    filter,         // 필터 조건 객체
+    sortBy: aiSortBy,
+    sortOrder: aiSortOrder,
+    message,        // 사용자 메시지
+  } = result;
+
+  // 3. 이름/회사/팀 검색 감지 및 공지 컬럼 추가
+  const searchKeywords = ["이름", "회사", "팀", "소속", "업체"];
+  const isSearchQuery =
+    searchKeywords.some((keyword) =>
+      chatInput.toLowerCase().includes(keyword)
+    ) ||
+    (filter && (filter.userName || filter.department));
+
+  if (isSearchQuery) {
+    if (!columns.includes("noticeTitle")) {
+      columns = [...columns, "noticeTitle"];
+    }
+    if (!columns.includes("noticeConfirmed")) {
+      columns = [...columns, "noticeConfirmed"];
+    }
+  }
+
+  // 4. 상태 업데이트
+  setActiveColumns(columns.length > 0 ? columns : Object.keys(ALL_COLUMNS));
+  setFilterConditions(filter || {});
+  if (aiSortBy) setSortBy(aiSortBy);
+  if (aiSortOrder) setSortOrder(aiSortOrder);
+  setAiMessage(message || "");
+}
+
+
+7. AI 함수 상세 분석 (gemini.ts)
+================================================================================
+
+7.1. getAttendanceSummary() - 출석 데이터 요약
+--------------------------------------------------------
+위치: gemini.ts (라인 43-85)
+
+목적: Firestore의 모든 authCheckIns 문서를 요약하여 AI에 전달
+
+반환 형식:
+Array<{
+  userName: string;
+  department: string;
+  checkInTime: string | null;      // "2025-12-26 오전 9:00:00" 형식
+  checkOutTime: string | null;
+  isCheckedOut: boolean;
+  isOnSite: boolean;               // 현장 내부 여부 (GPS 거리 계산)
+}>
+
+처리 로직:
+1. Firestore에서 모든 authCheckIns 문서 조회
+2. 각 문서에 대해:
+   - GPS 위치가 있으면 현장 중심 좌표와 거리 계산 (Haversine 공식)
+   - 핵심 필드만 추출하여 요약 객체 생성
+3. 요약 배열 반환
+
+
+7.2. askGeminiForAttendance() - 출석 조회 AI 함수
+--------------------------------------------------------
+위치: gemini.ts (라인 124-215)
+
+입력: question (string) - 사용자 질문
+출력: {
+  columns: string[];
+  filter: Record<string, string>;
+  sortBy?: string;
+  sortOrder?: "asc" | "desc";
+  message: string;
+}
+
+처리 단계:
+1. Gemini API 키 가져오기 (REACT_APP_GEMINI_API_KEY)
+2. GoogleGenerativeAI 인스턴스 생성
+3. 모델: "gemini-2.0-flash-001"
+4. getAttendanceSummary()로 출석 데이터 요약
+5. System Prompt 생성 (규칙 포함)
+6. Gemini API 호출
+7. 응답 파싱 (마크다운 코드 블록 제거 후 JSON 파싱)
+8. 파싱된 JSON 반환
+
+System Prompt 주요 규칙:
+- 사용 가능한 필드: userName, phoneNumber, department, timestamp, 
+  checkOutTime, highRiskWork, noticeConfirmed, noticeTitle
+- 이름/회사/팀 검색 시 noticeTitle, noticeConfirmed 컬럼 강제 포함
+- 시간 필터링 형식:
+  * "before:09:00" - 9시 이전
+  * "after:09:00" - 9시 이후
+  * "09:00-12:00" - 9시부터 12시까지
+  * "at:09:00" - 정확히 9시
+
+
+7.3. getNoticeStatusBySearch() - 공지 상태 조회
+--------------------------------------------------------
+위치: gemini.ts (라인 220-324)
+
+입력: searchQuery (string) - 검색어
+출력: Array<{
+  userName: string;
+  department: string;
+  company?: string;              // 추출된 회사명
+  team?: string;               // 추출된 팀명
+  latestNoticeTitle: string;    // 최신 공지 제목
+  latestNoticeSentAt: string | null;
+  noticeConfirmed: boolean;
+  allNotices: Array<{          // 모든 공지 목록
+    title: string;
+    confirmed: boolean;
+    sentAt: string;
+  }>;
+}>
+
+처리 로직:
+1. Firestore에서 모든 authCheckIns 문서 조회
+2. 각 문서에 대해:
+   - userName, department에서 검색어 매칭 확인
+   - department 파싱: "회사명 - 팀명" 형식 분리
+   - noticeHistory 배열에서 공지 정보 추출
+   - 최신 공지 찾기 (sentAt 기준 내림차순 정렬)
+3. 매칭된 문서만 결과 배열에 추가
+4. 결과 배열 반환
+
+
+7.4. askGeminiForNoticeStatus() - 공지 조회 AI 함수
+--------------------------------------------------------
+위치: gemini.ts (라인 329-394)
+
+입력: question (string) - 사용자 질문
+출력: string - 마크다운 테이블 형식 문자열
+
+처리 단계:
+1. Gemini API 키 가져오기
+2. 모델: "gemini-2.0-flash-001"
+3. getNoticeStatusBySearch()로 공지 데이터 조회
+4. System Prompt 생성 (마크다운 테이블 형식 강제)
+5. Gemini API 호출
+6. 마크다운 테이블 문자열 반환
+
+System Prompt 규칙:
+- 반드시 마크다운 테이블을 가장 먼저 표시
+- 테이블 컬럼: | 이름 | 소속 | 공지 내용 | 확인 여부 |
+- 확인 여부: "✅ 확인" 또는 "❌ 미확인"
+
+
+8. 필터링 및 정렬 로직
+================================================================================
+
+8.1. filteredAndSortedData (useMemo)
+--------------------------------------------------------
+위치: AttendanceList.tsx (라인 255-353)
+
+의존성: [checkIns, filterConditions, sortBy, sortOrder]
+
+8.1.1. 필터링 단계
+--------------------------------------------------------
+let filtered = checkIns.filter((item) => {
+  return Object.entries(filterConditions).every(([key, value]) => {
+    // 모든 필터 조건을 AND로 결합
+  });
+});
+
+특별 처리 필드:
+
+1. noticeTitle 필드:
+   - noticeHistory 배열 내에서 제목 검색
+   - noticeHistory가 없으면 필터링 제외
+   ```typescript
+   if (key === "noticeTitle") {
+     if (!item.noticeHistory || item.noticeHistory.length === 0) {
+       return false;
+     }
+     return item.noticeHistory.some((notice) =>
+       notice.title.toLowerCase().includes(value.toLowerCase())
+     );
+   }
+   ```
+
+2. timestamp / checkOutTime 필드:
+   - 시간 조건 파싱 및 비교
+   - 형식: "before:09:00", "after:09:00", "at:09:00", "09:00-12:00"
+   ```typescript
+   if (key === "timestamp" || key === "checkOutTime") {
+     const timestamp = item[key];
+     const itemDate = timestamp.toDate();
+     const itemTimeInMinutes = itemDate.getHours() * 60 + itemDate.getMinutes();
+     
+     // 시간 조건 파싱 및 비교
+     // ...
+   }
+   ```
+
+3. 일반 필드:
+   - 부분 일치 검색 (대소문자 무시)
+   ```typescript
+   const itemValue = item[key]?.toString() || "";
+   return itemValue.toLowerCase().includes(value.toLowerCase());
+   ```
+
+8.1.2. 정렬 단계
+--------------------------------------------------------
+if (sortBy) {
+  filtered.sort((a, b) => {
+    const aValue = a[sortBy];
+    const bValue = b[sortBy];
+
+    // Timestamp 타입 처리
+    if (aValue instanceof Timestamp && bValue instanceof Timestamp) {
+      const aTime = aValue.toMillis();
+      const bTime = bValue.toMillis();
+      return sortOrder === "asc" ? aTime - bTime : bTime - aTime;
+    }
+
+    // 일반 값 비교 (문자열)
+    const aStr = aValue?.toString() || "";
+    const bStr = bValue?.toString() || "";
+    return sortOrder === "asc" 
+      ? aStr.localeCompare(bStr)
+      : bStr.localeCompare(aStr);
+  });
+}
+
+
+8.2. expandedData (useMemo) - 공지 데이터 확장
+--------------------------------------------------------
+위치: AttendanceList.tsx (라인 356-384)
+
+의존성: [filteredAndSortedData]
+
+목적: noticeHistory 배열을 펼쳐서 각 공지마다 별도 행 생성
+
+처리 로직:
+```typescript
+const expanded: Array<AuthCheckIn & { noticeItem?: {...} }> = [];
+
+filteredAndSortedData.forEach((checkIn) => {
+  if (checkIn.noticeHistory && checkIn.noticeHistory.length > 0) {
+    // noticeHistory가 있으면 각 공지마다 행 생성
+    checkIn.noticeHistory.forEach((noticeItem) => {
+      expanded.push({
+        ...checkIn,
+        noticeItem,  // 현재 행의 공지 정보
+      });
+    });
+  } else {
+    // noticeHistory가 없으면 기존처럼 1행만 추가
+    expanded.push(checkIn);
+  }
+});
+```
+
+결과:
+- noticeHistory가 있는 사용자: 공지 개수만큼 행 생성
+- noticeHistory가 없는 사용자: 1행만 생성
+
+
+9. UI 렌더링 로직
+================================================================================
+
+9.1. 테이블 헤더 렌더링
+--------------------------------------------------------
+위치: AttendanceList.tsx (라인 687-741)
+
+{activeColumns.map((key) => {
+  const column = ALL_COLUMNS[key];
+  if (!column) return null;
+
+  const isSorted = sortBy === key;
+  return (
+    <th onClick={() => handleSort(key)}>
+      {column.label}
+      {isSorted && <span>{sortOrder === "asc" ? "↑" : "↓"}</span>}
+    </th>
+  );
+})}
+
+동작:
+- activeColumns 배열을 순회하며 헤더 생성
+- 정렬된 컬럼은 화살표 표시
+- 헤더 클릭 시 handleSort() 호출
+
+
+9.2. 테이블 바디 렌더링
+--------------------------------------------------------
+위치: AttendanceList.tsx (라인 769-878)
+
+{expandedData.map((checkIn, index) => {
+  const noticeTitle = checkIn.noticeItem?.title || "-";
+  const noticeConfirmed = checkIn.noticeItem?.confirmed || false;
+
+  return (
+    <tr key={`${checkIn.id}-${checkIn.noticeItem?.id || "default"}-${index}`}>
+      {activeColumns.map((key) => {
+        const column = ALL_COLUMNS[key];
+        let displayValue: React.ReactNode = "-";
+
+        // 특별 처리 컬럼
+        if (key === "timestamp" || key === "checkOutTime") {
+          displayValue = formatTime(checkIn[column.key] as Timestamp);
+        } else if (key === "noticeConfirmed") {
+          const confirmed = checkIn.noticeItem
+            ? noticeConfirmed
+            : checkIn.noticeConfirmed || false;
+          displayValue = confirmed ? "확인" : "미확인";
+        } else if (key === "noticeTitle") {
+          displayValue = noticeTitle;
+        } else {
+          displayValue = checkIn[column.key]?.toString() || "-";
+        }
+
+        return <td>{displayValue}</td>;
+      })}
+    </tr>
+  );
+})}
+
+특별 처리:
+- timestamp/checkOutTime: formatTime() 함수로 시간 포맷팅
+- noticeConfirmed: noticeItem이 있으면 noticeItem.confirmed 사용, 
+  없으면 checkIn.noticeConfirmed 사용
+- noticeTitle: noticeItem.title 사용
+
+
+10. 변수명과 컬럼명 매핑 관계
+================================================================================
+
+10.1. 컬럼 키 → AuthCheckIn 필드 매핑
+--------------------------------------------------------
+ALL_COLUMNS 정의:
+- "userName" → AuthCheckIn.userName
+- "phoneNumber" → AuthCheckIn.phoneNumber
+- "department" → AuthCheckIn.department
+- "timestamp" → AuthCheckIn.timestamp
+- "checkOutTime" → AuthCheckIn.checkOutTime
+- "highRiskWork" → AuthCheckIn.highRiskWork
+- "noticeConfirmed" → AuthCheckIn.noticeConfirmed (deprecated) 
+                      또는 noticeHistory[].confirmed
+- "noticeTitle" → noticeHistory[].title (가상 컬럼)
+
+
+10.2. AI 응답 필드 → 컬럼 키 매핑
+--------------------------------------------------------
+askGeminiForAttendance() 응답:
+- columns: string[] → activeColumns 상태에 직접 할당
+- filter: Record<string, string> → filterConditions 상태에 할당
+  * filter의 키는 AuthCheckIn 필드명과 일치해야 함
+  * 예: { "department": "삼성물산" } → AuthCheckIn.department 필터링
+- sortBy: string → sortBy 상태에 할당
+- sortOrder: "asc" | "desc" → sortOrder 상태에 할당
+
+
+10.3. 필터 조건 키 → 필터링 로직 매핑
+--------------------------------------------------------
+filterConditions 객체의 키에 따라 다른 필터링 로직 적용:
+
+1. "noticeTitle":
+   - noticeHistory 배열 검색
+   - noticeHistory.some((notice) => notice.title.includes(value))
+
+2. "timestamp" 또는 "checkOutTime":
+   - 시간 조건 파싱
+   - 형식: "before:09:00", "after:09:00", "at:09:00", "09:00-12:00"
+
+3. 기타 필드:
+   - 부분 일치 검색 (대소문자 무시)
+   - item[key].toString().toLowerCase().includes(value.toLowerCase())
+
+
+11. 데이터 흐름도
+================================================================================
+
+[사용자 입력]
+    ↓
+[handleAskAI()]
+    ↓
+공지 키워드? 
+    ├─ YES → askGeminiForNoticeStatus()
+    │          ↓
+    │      getNoticeStatusBySearch()
+    │          ↓
+    │      Firestore authCheckIns 조회
+    │          ↓
+    │      Gemini API (마크다운 테이블)
+    │          ↓
+    │      aiMessage 상태 업데이트
+    │
+    └─ NO → askGeminiForAttendance()
+               ↓
+           getAttendanceSummary()
+               ↓
+           Firestore authCheckIns 조회
+               ↓
+           Gemini API (JSON)
+               ↓
+           { columns, filter, sortBy, sortOrder, message }
+               ↓
+           상태 업데이트:
+           - activeColumns ← columns
+           - filterConditions ← filter
+           - sortBy ← aiSortBy
+           - sortOrder ← aiSortOrder
+               ↓
+           [필터링 및 정렬]
+           filteredAndSortedData (useMemo)
+               ↓
+           [공지 데이터 확장]
+           expandedData (useMemo)
+               ↓
+           [UI 렌더링]
+           테이블 표시
+
+
+12. 주요 함수 및 메서드
+================================================================================
+
+12.1. AttendanceList.tsx
+--------------------------------------------------------
+- handleAskAI(): 챗봇 질문 처리
+- handleSort(columnKey): 컬럼 헤더 클릭 시 정렬
+- formatTime(timestamp): 시간 포맷팅 (HH:MM)
+- handleGenerateDummy(): 테스트 데이터 생성
+- saveSiteConfig(): 현장 설정 저장
+
+
+12.2. gemini.ts
+--------------------------------------------------------
+- getAttendanceSummary(): 출석 데이터 요약
+- askGeminiForAttendance(question): 출석 조회 AI 함수
+- getNoticeStatusBySearch(searchQuery): 공지 상태 조회
+- askGeminiForNoticeStatus(question): 공지 조회 AI 함수
+- calculateDistance(lat1, lon1, lat2, lon2): GPS 거리 계산 (Haversine)
+
+
+13. 주의사항 및 제약사항
+================================================================================
+
+1. noticeTitle은 가상 컬럼
+   - AuthCheckIn 타입에 직접 정의되지 않음
+   - noticeHistory 배열에서 추출
+   - ALL_COLUMNS에서 "noticeTitle" as keyof AuthCheckIn로 타입 단언
+
+2. noticeConfirmed 필드
+   - AuthCheckIn.noticeConfirmed는 deprecated
+   - 실제 사용: noticeHistory[].confirmed
+   - 하위 호환성을 위해 두 가지 모두 처리
+
+3. 시간 필터링 형식
+   - AI가 반드시 지정된 형식으로 반환해야 함
+   - 형식: "before:09:00", "after:09:00", "at:09:00", "09:00-12:00"
+   - 파싱 실패 시 문자열 부분 일치로 폴백
+
+4. 공지 데이터 확장
+   - noticeHistory가 있는 사용자는 공지 개수만큼 행 생성
+   - 같은 사용자가 여러 행으로 표시될 수 있음
+   - key prop: `${checkIn.id}-${noticeItem?.id || "default"}-${index}`
+
+5. 실시간 데이터
+   - onSnapshot 사용으로 자동 업데이트
+   - 네트워크 오류 시 에러 핸들러에서 처리
+   - 구독 해제는 useEffect cleanup에서 처리
+
+
+14. 확장 가능성
+================================================================================
+
+1. 추가 필터 조건
+   - filterConditions에 새로운 키 추가
+   - filteredAndSortedData에서 해당 키 처리 로직 추가
+
+2. 추가 컬럼
+   - ALL_COLUMNS에 새 항목 추가
+   - AuthCheckIn 타입에 해당 필드 추가 (필요시)
+
+3. AI 프롬프트 개선
+   - System Prompt 수정으로 더 정교한 분석 가능
+   - 새로운 필터 형식 추가 가능
+
+4. 서버 사이드 처리
+   - analyzeAttendanceQuery Cloud Function 사용 가능
+   - 클라이언트 API 키 노출 방지
+
+
+================================================================================
+분석 완료
+작성일: 2025-12-26
+================================================================================
+
+

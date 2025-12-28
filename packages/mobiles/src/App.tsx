@@ -16,6 +16,7 @@ import {
   ActivityIndicator,
   Linking,
   Modal,
+  Vibration,
 } from "react-native";
 
 import { auth, db, functions } from "./firebase";
@@ -48,6 +49,7 @@ import { httpsCallable } from "firebase/functions";
 
 import { GREETING, UserRole, BaseDepartment, MobileDesignTokens } from "@mp3/common";
 import * as Location from "expo-location";
+import { Audio } from "expo-av";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { NativeModules, ErrorUtils } from "react-native";
 import ErrorBoundary from "./ErrorBoundary";
@@ -834,20 +836,84 @@ function BulletinList({
     return false;
   };
 
+  // 알람 소리 재생 함수
+  const playNotificationSound = async (isFireAlert: boolean) => {
+    try {
+      // 오디오 모드 설정
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        staysActiveInBackground: true,
+        playsInSilentModeIOS: true,
+        shouldDuckAndroid: true,
+      });
+
+      // 소리 파일 경로 선택 (WAV 파일 사용)
+      const soundFile = isFireAlert
+        ? require("../assets/fire_alert_sound.wav")
+        : require("../assets/notification_sound.wav");
+
+      // 소리 재생
+      const { sound } = await Audio.Sound.createAsync(
+        soundFile,
+        { shouldPlay: true, volume: 1.0 }
+      );
+
+      // 재생 완료 후 정리
+      sound.setOnPlaybackStatusUpdate((status) => {
+        if (status.isLoaded && status.didJustFinish) {
+          sound.unloadAsync();
+        }
+      });
+
+      // 화재 알림인 경우 진동도 추가
+      if (isFireAlert) {
+        Vibration.vibrate([500, 500, 500, 500], false);
+      }
+    } catch (error) {
+      console.error("알람 소리 재생 오류:", error);
+      // 오류 발생 시 진동으로 대체
+      Vibration.vibrate([200, 200], false);
+    }
+  };
+
   useEffect(() => {
     const q = query(collection(db, "bulletins"), orderBy("createdAt", "desc"));
+    
+    // 이전 공지 ID 추적 (중복 재생 방지)
+    const previousBulletinIds = new Set<string>();
+    let isInitialLoad = true; // 초기 로드 플래그
+    
     const unsubscribe = onSnapshot(q, (querySnapshot) => {
       const docs: Bulletin[] = [];
+      
       querySnapshot.forEach((doc) => {
         const data = { id: doc.id, ...doc.data() } as Bulletin;
 
         // 공지 필터링 로직
         if (shouldShowBulletin(data, mobileUser)) {
           docs.push(data);
+          
+          // 초기 로드가 아니고, 새로 추가된 공지인지 확인
+          if (!isInitialLoad && !previousBulletinIds.has(doc.id)) {
+            // 이전에 없던 공지 = 새 공지
+            const isFireAlert = !!data.emergencyAlertId;
+            playNotificationSound(isFireAlert);
+          }
         }
       });
+      
+      // 초기 로드 완료 표시
+      if (isInitialLoad) {
+        isInitialLoad = false;
+      }
+      
+      // 현재 공지 ID 저장
+      previousBulletinIds.clear();
+      docs.forEach((doc) => previousBulletinIds.add(doc.id));
+      
       setBulletins(docs);
     });
+    
     return () => unsubscribe();
   }, [mobileUser]);
 
