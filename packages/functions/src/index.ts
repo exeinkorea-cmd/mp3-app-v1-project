@@ -179,7 +179,7 @@ async function performDailyReset(): Promise<void> {
 
     // ==================================================================
     // 2단계: bulletins (공지사항) - 데이터초기화 버튼과 동일한 로직
-    // isPersistent=true인 문서는 보존
+    // isPersistent=true인 문서는 보존 (단, isWeatherAlert=true인 날씨 경고는 삭제)
     // ==================================================================
     try {
       const bulletinsSnapshot = await db.collection("bulletins").get();
@@ -193,6 +193,20 @@ async function performDailyReset(): Promise<void> {
 
         for (const doc of bulletinsSnapshot.docs) {
           const data = doc.data();
+          // isWeatherAlert가 true인 날씨 경고는 무조건 삭제 (팝업 5종 중 하나)
+          if (data.isWeatherAlert === true) {
+            batch.delete(doc.ref);
+            count++;
+            deletedCount++;
+            
+            if (count >= MAX_BATCH_SIZE) {
+              batches.push(batch.commit());
+              batch = db.batch();
+              count = 0;
+            }
+            continue;
+          }
+          
           // isPersistent가 true인 문서는 보존 (데이터초기화 버튼과 동일)
           if (data.isPersistent === true) {
             preservedCount++;
@@ -447,9 +461,9 @@ export const manualResetData = onCall(
 );
 
 /**
- * 전체 사용자 강제 로그아웃 (데이터 삭제 방식)
- * - 기능: authCheckIns 컬렉션의 모든 문서를 삭제하여 강제 로그아웃 처리
- * - 데이터: 출석 데이터를 완전히 삭제 (모바일 앱에서 문서 삭제 감지하여 로그아웃)
+ * 전체 사용자 강제 로그아웃 (퇴근 처리 방식)
+ * - 기능: authCheckIns 컬렉션의 모든 활성 사용자에 checkOutTime 설정 및 location 삭제
+ * - 데이터: 출석 데이터를 업데이트하여 퇴근 처리 (삭제하지 않음)
  * - 전역 초기화: Google Cloud 권장 Standard Global Initialization 패턴 사용
  */
 export const manualRevokeSessions = onCall(
@@ -462,24 +476,47 @@ export const manualRevokeSessions = onCall(
       const snapshot = await db.collection("authCheckIns").get();
 
       if (snapshot.empty) {
-        logger.info("✅ 삭제할 출석 데이터가 없습니다.");
+        logger.info("✅ 처리할 출석 데이터가 없습니다.");
         return {
           success: true,
-          message: "삭제할 출석 데이터가 없습니다.",
-          deletedCount: 0,
+          message: "처리할 출석 데이터가 없습니다.",
+          updatedCount: 0,
         };
       }
 
       logger.info(`📊 조회된 문서 수: ${snapshot.size}개`);
 
-      // 2. 배치 삭제 (Batch Chunking - 400개 제한)
+      // 2. checkOutTime이 없는 활성 사용자만 퇴근 처리
+      const activeUsers: Array<{ docId: string }> = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        if (!data.checkOutTime) {
+          activeUsers.push({ docId: doc.id });
+        }
+      });
+
+      if (activeUsers.length === 0) {
+        logger.info("✅ 퇴근 처리할 활성 사용자가 없습니다.");
+        return {
+          success: true,
+          message: "퇴근 처리할 활성 사용자가 없습니다.",
+          updatedCount: 0,
+        };
+      }
+
+      logger.info(`📊 퇴근 처리 대상: ${activeUsers.length}명`);
+
+      // 3. 배치 업데이트 (Batch Chunking - 400개 제한)
       const MAX_BATCH_SIZE = 400;
       const batches: Promise<any>[] = [];
       let batch = db.batch();
       let count = 0;
 
-      for (const doc of snapshot.docs) {
-        batch.delete(doc.ref);
+      for (const user of activeUsers) {
+        batch.update(db.collection("authCheckIns").doc(user.docId), {
+          checkOutTime: FieldValue.serverTimestamp(),
+          location: FieldValue.delete(), // GPS 정보 삭제
+        });
         count++;
         if (count >= MAX_BATCH_SIZE) {
           batches.push(batch.commit());
@@ -491,16 +528,47 @@ export const manualRevokeSessions = onCall(
         batches.push(batch.commit());
       }
 
-      // 3. 실행
+      // 4. 실행
       logger.info(`🚀 ${batches.length}개의 배치를 병렬로 실행합니다.`);
       await Promise.all(batches);
-      logger.info(`✅ 총 ${snapshot.size}명의 데이터 삭제 완료`);
+      logger.info(`✅ 총 ${activeUsers.length}명의 퇴근 처리 완료`);
 
       return {
         success: true,
-        message: "전체 로그아웃 및 초기화 완료",
-        deletedCount: snapshot.size,
+        message: "전체 로그아웃 및 퇴근 처리 완료",
+        updatedCount: activeUsers.length,
       };
+
+      // [기존 로직 - 복구용 보존] 문서 삭제 방식
+      // // 2. 배치 삭제 (Batch Chunking - 400개 제한)
+      // const MAX_BATCH_SIZE = 400;
+      // const batches: Promise<any>[] = [];
+      // let batch = db.batch();
+      // let count = 0;
+      //
+      // for (const doc of snapshot.docs) {
+      //   batch.delete(doc.ref);
+      //   count++;
+      //   if (count >= MAX_BATCH_SIZE) {
+      //     batches.push(batch.commit());
+      //     batch = db.batch();
+      //     count = 0;
+      //   }
+      // }
+      // if (count > 0) {
+      //   batches.push(batch.commit());
+      // }
+      //
+      // // 3. 실행
+      // logger.info(`🚀 ${batches.length}개의 배치를 병렬로 실행합니다.`);
+      // await Promise.all(batches);
+      // logger.info(`✅ 총 ${snapshot.size}명의 데이터 삭제 완료`);
+      //
+      // return {
+      //   success: true,
+      //   message: "전체 로그아웃 및 초기화 완료",
+      //   deletedCount: snapshot.size,
+      // };
     } catch (error) {
       logger.error("❌ 처리 실패:", error);
       throw new functions.https.HttpsError(
@@ -513,9 +581,9 @@ export const manualRevokeSessions = onCall(
 );
 
 /**
- * 기타 소속 사용자 강제 로그아웃 (데이터 삭제 방식)
- * - 기능: authCheckIns 컬렉션에서 "기타" 소속 사용자의 모든 문서를 삭제하여 강제 로그아웃 처리
- * - 데이터: 출석 데이터를 완전히 삭제 (모바일 앱에서 문서 삭제 감지하여 로그아웃)
+ * 기타 소속 사용자 강제 로그아웃 (퇴근 처리 방식)
+ * - 기능: authCheckIns 컬렉션에서 "기타" 소속 활성 사용자에 checkOutTime 설정 및 location 삭제
+ * - 데이터: 출석 데이터를 업데이트하여 퇴근 처리 (삭제하지 않음)
  * - 전역 초기화: Google Cloud 권장 Standard Global Initialization 패턴 사용
  */
 export const manualRevokeOthersSessions = onCall(
@@ -539,24 +607,47 @@ export const manualRevokeOthersSessions = onCall(
         .get();
 
       if (snapshot.empty) {
-        logger.info("✅ 삭제할 기타 소속 출석 데이터가 없습니다.");
+        logger.info("✅ 처리할 기타 소속 출석 데이터가 없습니다.");
         return {
           success: true,
-          message: "삭제할 기타 소속 출석 데이터가 없습니다.",
-          deletedCount: 0,
+          message: "처리할 기타 소속 출석 데이터가 없습니다.",
+          updatedCount: 0,
         };
       }
 
       logger.info(`📊 조회된 기타 소속 문서 수: ${snapshot.size}개`);
 
-      // 3. 배치 삭제 (Batch Chunking - 400개 제한)
+      // 3. checkOutTime이 없는 활성 사용자만 퇴근 처리
+      const activeUsers: Array<{ docId: string }> = [];
+      snapshot.forEach((doc) => {
+        const data = doc.data();
+        if (!data.checkOutTime) {
+          activeUsers.push({ docId: doc.id });
+        }
+      });
+
+      if (activeUsers.length === 0) {
+        logger.info("✅ 퇴근 처리할 기타 소속 활성 사용자가 없습니다.");
+        return {
+          success: true,
+          message: "퇴근 처리할 기타 소속 활성 사용자가 없습니다.",
+          updatedCount: 0,
+        };
+      }
+
+      logger.info(`📊 퇴근 처리 대상: ${activeUsers.length}명`);
+
+      // 4. 배치 업데이트 (Batch Chunking - 400개 제한)
       const MAX_BATCH_SIZE = 400;
       const batches: Promise<any>[] = [];
       let batch = db.batch();
       let count = 0;
 
-      for (const doc of snapshot.docs) {
-        batch.delete(doc.ref);
+      for (const user of activeUsers) {
+        batch.update(db.collection("authCheckIns").doc(user.docId), {
+          checkOutTime: FieldValue.serverTimestamp(),
+          location: FieldValue.delete(), // GPS 정보 삭제
+        });
         count++;
         if (count >= MAX_BATCH_SIZE) {
           batches.push(batch.commit());
@@ -568,18 +659,51 @@ export const manualRevokeOthersSessions = onCall(
         batches.push(batch.commit());
       }
 
-      // 4. 실행
+      // 5. 실행
       logger.info(`🚀 ${batches.length}개의 배치를 병렬로 실행합니다.`);
       await Promise.all(batches);
       logger.info(
-        `✅ 총 ${snapshot.size}명의 '기타' 소속 사용자 데이터 삭제 완료`
+        `✅ 총 ${activeUsers.length}명의 '기타' 소속 사용자 퇴근 처리 완료`
       );
 
       return {
         success: true,
-        message: `총 ${snapshot.size}명의 '기타' 소속 사용자가 로그아웃되었습니다.`,
-        deletedCount: snapshot.size,
+        message: `총 ${activeUsers.length}명의 '기타' 소속 사용자가 로그아웃되었습니다.`,
+        updatedCount: activeUsers.length,
       };
+
+      // [기존 로직 - 복구용 보존] 문서 삭제 방식
+      // // 3. 배치 삭제 (Batch Chunking - 400개 제한)
+      // const MAX_BATCH_SIZE = 400;
+      // const batches: Promise<any>[] = [];
+      // let batch = db.batch();
+      // let count = 0;
+      //
+      // for (const doc of snapshot.docs) {
+      //   batch.delete(doc.ref);
+      //   count++;
+      //   if (count >= MAX_BATCH_SIZE) {
+      //     batches.push(batch.commit());
+      //     batch = db.batch();
+      //     count = 0;
+      //   }
+      // }
+      // if (count > 0) {
+      //   batches.push(batch.commit());
+      // }
+      //
+      // // 4. 실행
+      // logger.info(`🚀 ${batches.length}개의 배치를 병렬로 실행합니다.`);
+      // await Promise.all(batches);
+      // logger.info(
+      //   `✅ 총 ${snapshot.size}명의 '기타' 소속 사용자 데이터 삭제 완료`
+      // );
+      //
+      // return {
+      //   success: true,
+      //   message: `총 ${snapshot.size}명의 '기타' 소속 사용자가 로그아웃되었습니다.`,
+      //   deletedCount: snapshot.size,
+      // };
     } catch (error) {
       logger.error("❌ 처리 실패:", error);
       throw new functions.https.HttpsError(
@@ -776,8 +900,15 @@ async function checkAttendanceStatus(checkTime: string) {
             );
             autoCheckoutUsers.push(user.userId);
 
+            // 강제 로그아웃과 동일하게 퇴근 처리 (checkOutTime 설정 + location 삭제)
+            await db.collection("authCheckIns").doc(user.docId).update({
+              checkOutTime: FieldValue.serverTimestamp(),
+              location: FieldValue.delete(), // GPS 정보 삭제
+            });
+
+            // [기존 로직 - 복구용 보존]
             // 강제 로그아웃과 동일하게 문서 삭제
-            await db.collection("authCheckIns").doc(user.docId).delete();
+            // await db.collection("authCheckIns").doc(user.docId).delete();
           } else {
             siteOutsideUsers.push({
               docId: user.docId,
