@@ -896,6 +896,112 @@ export const checkAttendanceStatus1800 = onSchedule(
 );
 
 /**
+ * 전체 근로자 GPS 확인 함수
+ * authCheckIns의 모든 활성 사용자의 GPS 위치를 확인합니다.
+ */
+async function checkAllWorkersGPS() {
+  logger.info("전체 근로자 GPS 확인 시작");
+
+  try {
+    // 1. GPS 자동 확인 설정 확인
+    const configDoc = await db.collection("settings").doc("site_config").get();
+    if (!configDoc.exists) {
+      logger.warn("현장 설정이 없습니다.");
+      return;
+    }
+
+    const configData = configDoc.data();
+    if (!configData?.autoGpsCheckEnabled) {
+      logger.info("GPS 자동 확인이 비활성화되어 있습니다.");
+      return;
+    }
+
+    // 2. 활성 사용자 조회 (checkOutTime이 없는 사용자)
+    const checkInsSnapshot = await db.collection("authCheckIns").get();
+    const activeUsers: Array<{
+      docId: string;
+      userId: string;
+      userName: string;
+      location?: { latitude: number; longitude: number };
+      locationUpdatedAt?: any;
+    }> = [];
+
+    checkInsSnapshot.forEach((doc) => {
+      const data = doc.data();
+      if (!data.checkOutTime && data.userId) {
+        activeUsers.push({
+          docId: doc.id,
+          userId: data.userId,
+          userName: data.userName || "알 수 없음",
+          location: data.location,
+          locationUpdatedAt: data.locationUpdatedAt || data.timestamp,
+        });
+      }
+    });
+
+    logger.info(`활성 사용자 수: ${activeUsers.length}명`);
+
+    // 3. GPS 위치가 없거나 오래된 사용자 확인
+    const now = new Date();
+    const usersWithoutGPS: string[] = [];
+    const usersWithOldGPS: string[] = [];
+
+    for (const user of activeUsers) {
+      if (!user.location) {
+        usersWithoutGPS.push(user.userName);
+      } else if (user.locationUpdatedAt) {
+        const updatedAt = user.locationUpdatedAt.toDate();
+        const hoursDiff = (now.getTime() - updatedAt.getTime()) / (1000 * 60 * 60);
+        // 2시간 이상 업데이트되지 않은 경우
+        if (hoursDiff >= 2) {
+          usersWithOldGPS.push(user.userName);
+        }
+      }
+    }
+
+    // 4. 로그 기록
+    if (usersWithoutGPS.length > 0 || usersWithOldGPS.length > 0) {
+      await db.collection("siteStatusLogs").add({
+        checkTime: "13:00",
+        timestamp: FieldValue.serverTimestamp(),
+        status: "active",
+        activeUsersCount: activeUsers.length,
+        activeUsers: activeUsers.map((u) => u.userName),
+        message: `GPS 확인: 위치 없음 ${usersWithoutGPS.length}명, 오래된 위치 ${usersWithOldGPS.length}명`,
+        gpsCheckResult: {
+          usersWithoutGPS,
+          usersWithOldGPS,
+          totalActiveUsers: activeUsers.length,
+        },
+      });
+
+      logger.info(
+        `GPS 확인 완료 - 위치 없음: ${usersWithoutGPS.length}명, 오래된 위치: ${usersWithOldGPS.length}명`
+      );
+    } else {
+      logger.info("모든 활성 사용자의 GPS 위치가 정상입니다.");
+    }
+  } catch (error) {
+    logger.error("전체 근로자 GPS 확인 오류:", error);
+    throw error;
+  }
+}
+
+/**
+ * 매일 13:00에 실행되는 전체 근로자 GPS 확인 함수
+ */
+export const checkAllWorkersGPSAt1PM = onSchedule(
+  {
+    schedule: "0 4 * * *", // UTC 4:00 = 한국시간 13:00 (UTC+9)
+    timeZone: "Asia/Seoul",
+    region: "us-central1",
+  },
+  async (event) => {
+    await checkAllWorkersGPS();
+  }
+);
+
+/**
  * 챗봇 출석 쿼리 분석 함수 (Gemini 2.0 Flash)
  */
 export const analyzeAttendanceQuery = onCall(
