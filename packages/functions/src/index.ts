@@ -774,12 +774,8 @@ async function checkAttendanceStatus(checkTime: string) {
             );
             autoCheckoutUsers.push(user.userId);
 
-            await db.collection("authCheckIns").doc(user.docId).update({
-              checkOutTime: FieldValue.serverTimestamp(),
-              autoCheckout: true,
-              autoCheckoutReason: "현장 외부 30분 경과",
-              autoCheckoutAt: FieldValue.serverTimestamp(),
-            });
+            // 강제 로그아웃과 동일하게 문서 삭제
+            await db.collection("authCheckIns").doc(user.docId).delete();
           } else {
             siteOutsideUsers.push({
               docId: user.docId,
@@ -844,7 +840,7 @@ async function checkAttendanceStatus(checkTime: string) {
 }
 
 /**
- * 매일 16:30에 실행되는 스마트 퇴근 체크 함수
+ * 매일 16:30에 실행되는 스마트 퇴근 체크 함수 (퇴근시간 16:00 + 30분)
  */
 export const checkAttendanceStatus1630 = onSchedule(
   {
@@ -858,7 +854,7 @@ export const checkAttendanceStatus1630 = onSchedule(
 );
 
 /**
- * 매일 17:00에 실행되는 스마트 퇴근 체크 함수
+ * 매일 17:00에 실행되는 스마트 퇴근 체크 함수 (퇴근시간 16:00 + 60분)
  */
 export const checkAttendanceStatus1700 = onSchedule(
   {
@@ -872,7 +868,7 @@ export const checkAttendanceStatus1700 = onSchedule(
 );
 
 /**
- * 매일 17:30에 실행되는 스마트 퇴근 체크 함수
+ * 매일 17:30에 실행되는 스마트 퇴근 체크 함수 (퇴근시간 16:00 + 90분)
  */
 export const checkAttendanceStatus1730 = onSchedule(
   {
@@ -882,6 +878,20 @@ export const checkAttendanceStatus1730 = onSchedule(
   },
   async (event) => {
     await checkAttendanceStatus("17:30");
+  }
+);
+
+/**
+ * 매일 18:00에 실행되는 스마트 퇴근 체크 함수 (퇴근시간 16:00 + 120분)
+ */
+export const checkAttendanceStatus1800 = onSchedule(
+  {
+    schedule: "0 9 * * *", // UTC 9:00 = 한국시간 18:00 (UTC+9)
+    timeZone: "Asia/Seoul",
+    region: "us-central1",
+  },
+  async (event) => {
+    await checkAttendanceStatus("18:00");
   }
 );
 

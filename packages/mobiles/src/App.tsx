@@ -1715,7 +1715,7 @@ export default function App() {
       // 변경사항 감지
       querySnapshot.docChanges().forEach((change) => {
         if (change.type === "removed") {
-          // 문서가 삭제된 경우 (강제 로그아웃)
+          // 문서가 삭제된 경우 (강제 로그아웃 또는 자동 퇴근)
           console.log("출석 문서가 삭제되었습니다. 로그아웃 처리합니다.");
           signOut(auth)
             .then(() => {
@@ -1724,7 +1724,7 @@ export default function App() {
               return AsyncStorage.removeItem(STORAGE_KEY);
             })
             .then(() => {
-              Alert.alert("로그아웃", "관리자에 의해 로그아웃 처리되었습니다.");
+              Alert.alert("자동 퇴근", "현장 외부로 확인됩니다. 자동 퇴근 처리됩니다.");
             })
             .catch((error) => {
               console.error("자동 로그아웃 오류:", error);
