@@ -1833,7 +1833,11 @@ export default function App() {
                 ? require("../assets/splash-icon-gs.png")
                 : require("../assets/splash-icon-exein.png")
             }
-            style={styles.splashImage}
+            style={
+              splashImageIndex === 0
+                ? styles.splashImageGS
+                : styles.splashImage
+            }
             resizeMode="contain"
           />
         </View>
@@ -1913,7 +1917,7 @@ const styles = StyleSheet.create({
   },
   welcomeContainer: {
     paddingTop: 0,
-    marginBottom: 10,
+    marginBottom: 20,
     alignItems: "center",
   },
   welcomeText: {
@@ -2017,7 +2021,7 @@ const styles = StyleSheet.create({
   bulletinItem: {
     backgroundColor: "#fff",
     padding: 15,
-    marginVertical: 5,
+    marginVertical: 12,
     borderRadius: 5,
     width: "100%",
     borderWidth: 1,
@@ -2367,11 +2371,14 @@ const styles = StyleSheet.create({
   copyrightContainer: {
     width: "100%",
     alignItems: "center", // 중앙 정렬
-    paddingHorizontal: 10,
-    paddingVertical: 10, // 상하 여백
-    position: "absolute", // 절대 위치
-    bottom: 0, // 화면 하단
-    backgroundColor: "#fff", // 배경색
+    paddingHorizontal: 20,
+    paddingTop: 0,
+    paddingBottom: 30,
+    minHeight: 100,
+    justifyContent: "center",
+    borderTopWidth: 1,
+    borderTopColor: "#e0e0e0",
+    backgroundColor: "#fff",
   },
   copyrightText: {
     fontSize: 12, // 한 줄로 보이도록 크기 축소
@@ -2391,5 +2398,9 @@ const styles = StyleSheet.create({
     height: "80%",
     maxWidth: 300,
     maxHeight: 300,
+  },
+  splashImageGS: {
+    width: 200,
+    height: 80,
   },
 });
