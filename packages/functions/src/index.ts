@@ -193,6 +193,19 @@ async function performDailyReset(): Promise<void> {
 
         for (const doc of bulletinsSnapshot.docs) {
           const data = doc.data();
+          
+          // 디버깅: 화재 공지 정보 로그
+          if (data.isPersistent === true || data.emergencyAlertId) {
+            const hasEmergencyAlertId = Object.prototype.hasOwnProperty.call(data, "emergencyAlertId");
+            logger.info(
+              `📋 [performDailyReset] 공지 확인: ${doc.id}, ` +
+              `isPersistent: ${data.isPersistent}, ` +
+              `emergencyAlertId: ${data.emergencyAlertId}, ` +
+              `type: ${typeof data.emergencyAlertId}, ` +
+              `hasOwnProperty: ${hasEmergencyAlertId}`
+            );
+          }
+          
           // isWeatherAlert가 true인 날씨 경고는 무조건 삭제 (팝업 5종 중 하나)
           if (data.isWeatherAlert === true) {
             batch.delete(doc.ref);
@@ -208,7 +221,18 @@ async function performDailyReset(): Promise<void> {
           }
           
           // emergencyAlertId가 있는 화재 공지도 삭제 (isPersistent와 관계없이)
-          if (data.emergencyAlertId) {
+          // 가장 안전한 방법: 필드 존재 여부 확인 + 타입 변환 후 체크
+          if (
+            data.emergencyAlertId !== undefined &&
+            data.emergencyAlertId !== null &&
+            String(data.emergencyAlertId).trim().length > 0
+          ) {
+            logger.info(
+              `🔥 [performDailyReset] 화재 공지 삭제: ${doc.id}, ` +
+              `emergencyAlertId: ${data.emergencyAlertId}, ` +
+              `converted: "${String(data.emergencyAlertId).trim()}"`
+            );
+            
             batch.delete(doc.ref);
             count++;
             deletedCount++;
@@ -369,7 +393,59 @@ export const manualResetData = onCall(
 
           for (const doc of bulletinsSnapshot.docs) {
             const data = doc.data();
-            // isPersistent가 true인 문서는 보존
+            
+            // 디버깅: 화재 공지 정보 로그
+            if (data.isPersistent === true || data.emergencyAlertId) {
+              const hasEmergencyAlertId = Object.prototype.hasOwnProperty.call(data, "emergencyAlertId");
+              logger.info(
+                `📋 [manualResetData] 공지 확인: ${doc.id}, ` +
+                `isPersistent: ${data.isPersistent}, ` +
+                `emergencyAlertId: ${data.emergencyAlertId}, ` +
+                `type: ${typeof data.emergencyAlertId}, ` +
+                `hasOwnProperty: ${hasEmergencyAlertId}`
+              );
+            }
+            
+            // isWeatherAlert가 true인 날씨 경고는 무조건 삭제 (팝업 5종 중 하나)
+            if (data.isWeatherAlert === true) {
+              batch.delete(doc.ref);
+              count++;
+              deletedCount++;
+              
+              if (count >= MAX_BATCH_SIZE) {
+                batches.push(batch.commit());
+                batch = db.batch();
+                count = 0;
+              }
+              continue;
+            }
+            
+            // emergencyAlertId가 있는 화재 공지도 삭제 (isPersistent와 관계없이)
+            // 가장 안전한 방법: 필드 존재 여부 확인 + 타입 변환 후 체크
+            if (
+              data.emergencyAlertId !== undefined &&
+              data.emergencyAlertId !== null &&
+              String(data.emergencyAlertId).trim().length > 0
+            ) {
+              logger.info(
+                `🔥 [manualResetData] 화재 공지 삭제: ${doc.id}, ` +
+                `emergencyAlertId: ${data.emergencyAlertId}, ` +
+                `converted: "${String(data.emergencyAlertId).trim()}"`
+              );
+              
+              batch.delete(doc.ref);
+              count++;
+              deletedCount++;
+              
+              if (count >= MAX_BATCH_SIZE) {
+                batches.push(batch.commit());
+                batch = db.batch();
+                count = 0;
+              }
+              continue;
+            }
+            
+            // isPersistent가 true인 문서는 보존 (지속공지)
             if (data.isPersistent === true) {
               preservedCount++;
               continue; // 삭제하지 않음
