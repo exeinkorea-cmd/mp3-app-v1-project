@@ -207,6 +207,20 @@ async function performDailyReset(): Promise<void> {
             continue;
           }
           
+          // emergencyAlertId가 있는 화재 공지도 삭제 (isPersistent와 관계없이)
+          if (data.emergencyAlertId) {
+            batch.delete(doc.ref);
+            count++;
+            deletedCount++;
+            
+            if (count >= MAX_BATCH_SIZE) {
+              batches.push(batch.commit());
+              batch = db.batch();
+              count = 0;
+            }
+            continue;
+          }
+          
           // isPersistent가 true인 문서는 보존 (데이터초기화 버튼과 동일)
           if (data.isPersistent === true) {
             preservedCount++;
