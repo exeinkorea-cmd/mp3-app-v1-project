@@ -194,20 +194,15 @@ async function performDailyReset(): Promise<void> {
         for (const doc of bulletinsSnapshot.docs) {
           const data = doc.data();
           
-          // 디버깅: 화재 공지 정보 로그
-          if (data.isPersistent === true || data.emergencyAlertId) {
-            const hasEmergencyAlertId = Object.prototype.hasOwnProperty.call(data, "emergencyAlertId");
+          // emergencyAlertId 필드가 존재하면 무조건 삭제 (화재 공지)
+          // in 연산자로 필드 존재 여부 확인 (타입, 값 무관)
+          if ("emergencyAlertId" in data) {
             logger.info(
-              `📋 [performDailyReset] 공지 확인: ${doc.id}, ` +
-              `isPersistent: ${data.isPersistent}, ` +
+              `🔥 [performDailyReset] 화재 공지 삭제: ${doc.id}, ` +
               `emergencyAlertId: ${data.emergencyAlertId}, ` +
-              `type: ${typeof data.emergencyAlertId}, ` +
-              `hasOwnProperty: ${hasEmergencyAlertId}`
+              `type: ${typeof data.emergencyAlertId}`
             );
-          }
-          
-          // isWeatherAlert가 true인 날씨 경고는 무조건 삭제 (팝업 5종 중 하나)
-          if (data.isWeatherAlert === true) {
+            
             batch.delete(doc.ref);
             count++;
             deletedCount++;
@@ -217,22 +212,11 @@ async function performDailyReset(): Promise<void> {
               batch = db.batch();
               count = 0;
             }
-            continue;
+            continue; // 이미 삭제 처리했으므로 다음 문서로
           }
           
-          // emergencyAlertId가 있는 화재 공지도 삭제 (isPersistent와 관계없이)
-          // 가장 안전한 방법: 필드 존재 여부 확인 + 타입 변환 후 체크
-          if (
-            data.emergencyAlertId !== undefined &&
-            data.emergencyAlertId !== null &&
-            String(data.emergencyAlertId).trim().length > 0
-          ) {
-            logger.info(
-              `🔥 [performDailyReset] 화재 공지 삭제: ${doc.id}, ` +
-              `emergencyAlertId: ${data.emergencyAlertId}, ` +
-              `converted: "${String(data.emergencyAlertId).trim()}"`
-            );
-            
+          // isWeatherAlert가 true인 날씨 경고는 무조건 삭제 (팝업 5종 중 하나)
+          if (data.isWeatherAlert === true) {
             batch.delete(doc.ref);
             count++;
             deletedCount++;
@@ -394,20 +378,15 @@ export const manualResetData = onCall(
           for (const doc of bulletinsSnapshot.docs) {
             const data = doc.data();
             
-            // 디버깅: 화재 공지 정보 로그
-            if (data.isPersistent === true || data.emergencyAlertId) {
-              const hasEmergencyAlertId = Object.prototype.hasOwnProperty.call(data, "emergencyAlertId");
+            // emergencyAlertId 필드가 존재하면 무조건 삭제 (화재 공지)
+            // in 연산자로 필드 존재 여부 확인 (타입, 값 무관)
+            if ("emergencyAlertId" in data) {
               logger.info(
-                `📋 [manualResetData] 공지 확인: ${doc.id}, ` +
-                `isPersistent: ${data.isPersistent}, ` +
+                `🔥 [manualResetData] 화재 공지 삭제: ${doc.id}, ` +
                 `emergencyAlertId: ${data.emergencyAlertId}, ` +
-                `type: ${typeof data.emergencyAlertId}, ` +
-                `hasOwnProperty: ${hasEmergencyAlertId}`
+                `type: ${typeof data.emergencyAlertId}`
               );
-            }
-            
-            // isWeatherAlert가 true인 날씨 경고는 무조건 삭제 (팝업 5종 중 하나)
-            if (data.isWeatherAlert === true) {
+              
               batch.delete(doc.ref);
               count++;
               deletedCount++;
@@ -417,22 +396,11 @@ export const manualResetData = onCall(
                 batch = db.batch();
                 count = 0;
               }
-              continue;
+              continue; // 이미 삭제 처리했으므로 다음 문서로
             }
             
-            // emergencyAlertId가 있는 화재 공지도 삭제 (isPersistent와 관계없이)
-            // 가장 안전한 방법: 필드 존재 여부 확인 + 타입 변환 후 체크
-            if (
-              data.emergencyAlertId !== undefined &&
-              data.emergencyAlertId !== null &&
-              String(data.emergencyAlertId).trim().length > 0
-            ) {
-              logger.info(
-                `🔥 [manualResetData] 화재 공지 삭제: ${doc.id}, ` +
-                `emergencyAlertId: ${data.emergencyAlertId}, ` +
-                `converted: "${String(data.emergencyAlertId).trim()}"`
-              );
-              
+            // isWeatherAlert가 true인 날씨 경고는 무조건 삭제 (팝업 5종 중 하나)
+            if (data.isWeatherAlert === true) {
               batch.delete(doc.ref);
               count++;
               deletedCount++;
