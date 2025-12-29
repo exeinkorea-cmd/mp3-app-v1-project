@@ -465,6 +465,14 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           },
         ],
         */
+        [
+          "expo-notifications",
+          {
+            icon: "./assets/icon-v2.png",
+            color: "#ffffff",
+            sounds: ["./assets/fire_alert_sound.wav", "./assets/notification_sound.wav"],
+          },
+        ],
       ],
       web: {
         favicon: "./assets/favicon.png",

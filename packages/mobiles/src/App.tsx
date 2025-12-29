@@ -49,6 +49,7 @@ import { httpsCallable } from "firebase/functions";
 
 import { GREETING, UserRole, BaseDepartment, MobileDesignTokens } from "@mp3/common";
 import * as Location from "expo-location";
+import * as Notifications from "expo-notifications";
 import { Audio } from "expo-av";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { NativeModules, ErrorUtils } from "react-native";
@@ -406,6 +407,16 @@ function SignInForm() {
         Alert.alert("권한 거부됨", "로그인을 위해 GPS 위치 권한이 필요합니다.");
         setIsLoggingIn(false);
         return;
+      }
+
+      // 2-1. 알림 권한 요청 (GPS 권한 승인 직후)
+      const { status: notificationStatus } = await Notifications.requestPermissionsAsync();
+      
+      if (notificationStatus !== "granted") {
+        // 알림 권한이 거부되어도 로그인은 진행 (선택적 권한)
+        console.log("알림 권한이 거부되었습니다. 푸시 알림을 받을 수 없습니다.");
+      } else {
+        console.log("알림 권한이 허용되었습니다.");
       }
 
       // 3. GPS 위치 확인 (동기적 처리)
@@ -897,11 +908,15 @@ function BulletinList({
           // 초기 로드가 아니고, 새로 추가된 공지인지 확인
           if (!isInitialLoad && !previousBulletinIds.has(doc.id)) {
             // 이전에 없던 공지 = 새 공지
-            // 화재 알림 또는 날씨 경고인 경우 알람 소리 재생
             const isFireAlert = !!data.emergencyAlertId;
             const isWeatherAlert = !!data.isWeatherAlert;
+            
+            // 화재 알림 또는 날씨 경고인 경우 화재 알람 소리
             if (isFireAlert || isWeatherAlert) {
               playNotificationSound(true); // 화재와 동일한 소리
+            } else {
+              // 일반 공지인 경우 일반 알람 소리
+              playNotificationSound(false); // 일반 공지 소리
             }
           }
         }

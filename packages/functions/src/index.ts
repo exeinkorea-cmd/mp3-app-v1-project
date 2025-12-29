@@ -193,22 +193,25 @@ async function performDailyReset(): Promise<void> {
 
         for (const doc of bulletinsSnapshot.docs) {
           const data = doc.data();
-          
+
           // emergencyAlertId 필드가 존재하면 무조건 삭제 (화재 공지)
           // 가장 확실한 방법: in 연산자와 undefined 체크 모두 사용
-          if (("emergencyAlertId" in data) || (data.emergencyAlertId !== undefined)) {
+          if (
+            "emergencyAlertId" in data ||
+            data.emergencyAlertId !== undefined
+          ) {
             logger.info(
               `🔥 [performDailyReset] 화재 공지 삭제: ${doc.id}, ` +
-              `emergencyAlertId: ${data.emergencyAlertId}, ` +
-              `type: ${typeof data.emergencyAlertId}, ` +
-              `in operator: ${"emergencyAlertId" in data}, ` +
-              `undefined check: ${data.emergencyAlertId !== undefined}`
+                `emergencyAlertId: ${data.emergencyAlertId}, ` +
+                `type: ${typeof data.emergencyAlertId}, ` +
+                `in operator: ${"emergencyAlertId" in data}, ` +
+                `undefined check: ${data.emergencyAlertId !== undefined}`
             );
-            
+
             batch.delete(doc.ref);
             count++;
             deletedCount++;
-            
+
             if (count >= MAX_BATCH_SIZE) {
               batches.push(batch.commit());
               batch = db.batch();
@@ -216,13 +219,13 @@ async function performDailyReset(): Promise<void> {
             }
             continue; // 이미 삭제 처리했으므로 다음 문서로
           }
-          
+
           // isWeatherAlert가 true인 날씨 경고는 무조건 삭제 (팝업 5종 중 하나)
           if (data.isWeatherAlert === true) {
             batch.delete(doc.ref);
             count++;
             deletedCount++;
-            
+
             if (count >= MAX_BATCH_SIZE) {
               batches.push(batch.commit());
               batch = db.batch();
@@ -230,7 +233,7 @@ async function performDailyReset(): Promise<void> {
             }
             continue;
           }
-          
+
           // isPersistent가 true인 문서는 보존 (데이터초기화 버튼과 동일)
           if (data.isPersistent === true) {
             preservedCount++;
@@ -379,22 +382,25 @@ export const manualResetData = onCall(
 
           for (const doc of bulletinsSnapshot.docs) {
             const data = doc.data();
-            
+
             // emergencyAlertId 필드가 존재하면 무조건 삭제 (화재 공지)
             // 가장 확실한 방법: in 연산자와 undefined 체크 모두 사용
-            if (("emergencyAlertId" in data) || (data.emergencyAlertId !== undefined)) {
+            if (
+              "emergencyAlertId" in data ||
+              data.emergencyAlertId !== undefined
+            ) {
               logger.info(
                 `🔥 [manualResetData] 화재 공지 삭제: ${doc.id}, ` +
-                `emergencyAlertId: ${data.emergencyAlertId}, ` +
-                `type: ${typeof data.emergencyAlertId}, ` +
-                `in operator: ${"emergencyAlertId" in data}, ` +
-                `undefined check: ${data.emergencyAlertId !== undefined}`
+                  `emergencyAlertId: ${data.emergencyAlertId}, ` +
+                  `type: ${typeof data.emergencyAlertId}, ` +
+                  `in operator: ${"emergencyAlertId" in data}, ` +
+                  `undefined check: ${data.emergencyAlertId !== undefined}`
               );
-              
+
               batch.delete(doc.ref);
               count++;
               deletedCount++;
-              
+
               if (count >= MAX_BATCH_SIZE) {
                 batches.push(batch.commit());
                 batch = db.batch();
@@ -402,13 +408,13 @@ export const manualResetData = onCall(
               }
               continue; // 이미 삭제 처리했으므로 다음 문서로
             }
-            
+
             // isWeatherAlert가 true인 날씨 경고는 무조건 삭제 (팝업 5종 중 하나)
             if (data.isWeatherAlert === true) {
               batch.delete(doc.ref);
               count++;
               deletedCount++;
-              
+
               if (count >= MAX_BATCH_SIZE) {
                 batches.push(batch.commit());
                 batch = db.batch();
@@ -416,7 +422,7 @@ export const manualResetData = onCall(
               }
               continue;
             }
-            
+
             // isPersistent가 true인 문서는 보존 (지속공지)
             if (data.isPersistent === true) {
               preservedCount++;
@@ -1146,7 +1152,8 @@ async function checkAllWorkersGPS() {
         usersWithoutGPS.push(user.userName);
       } else if (user.locationUpdatedAt) {
         const updatedAt = user.locationUpdatedAt.toDate();
-        const hoursDiff = (now.getTime() - updatedAt.getTime()) / (1000 * 60 * 60);
+        const hoursDiff =
+          (now.getTime() - updatedAt.getTime()) / (1000 * 60 * 60);
         // 2시간 이상 업데이트되지 않은 경우
         if (hoursDiff >= 2) {
           usersWithOldGPS.push(user.userName);
@@ -1715,7 +1722,7 @@ function getWeatherAlertMessage(feelsLike: number): {
       },
     };
   }
-  
+
   // 한파 경고 (낮은 온도부터 체크)
   else if (feelsLike <= -12) {
     return {
@@ -1752,7 +1759,7 @@ function getWeatherAlertMessage(feelsLike: number): {
       },
     };
   }
-  
+
   return null;
 }
 
@@ -1771,7 +1778,10 @@ export const checkWeatherAndSendAlert = onSchedule(
 
     try {
       // 1. 현장 설정 가져오기
-      const configDoc = await db.collection("settings").doc("site_config").get();
+      const configDoc = await db
+        .collection("settings")
+        .doc("site_config")
+        .get();
       if (!configDoc.exists) {
         logger.warn("현장 설정이 없습니다.");
         return;
@@ -1820,7 +1830,9 @@ export const checkWeatherAndSendAlert = onSchedule(
         .get();
 
       if (!existingAlerts.empty) {
-        logger.info("오늘 이미 같은 경고를 발송했습니다. 중복 발송을 건너뜁니다.");
+        logger.info(
+          "오늘 이미 같은 경고를 발송했습니다. 중복 발송을 건너뜁니다."
+        );
         return;
       }
 
@@ -1839,7 +1851,9 @@ export const checkWeatherAndSendAlert = onSchedule(
         createdBy: "system",
       });
 
-      logger.info(`✅ 날씨 경고 공지 발송 완료: ${alertMessage.titleTranslations.ko}`);
+      logger.info(
+        `✅ 날씨 경고 공지 발송 완료: ${alertMessage.titleTranslations.ko}`
+      );
     } catch (error) {
       logger.error("날씨 체크 및 경고 발송 오류:", error);
     }
