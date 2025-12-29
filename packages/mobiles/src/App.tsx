@@ -746,6 +746,8 @@ function BulletinList({
   const [checkedDefaultBulletins, setCheckedDefaultBulletins] = useState<
     Set<string>
   >(new Set());
+  // 현재 시간 상태
+  const [currentTime, setCurrentTime] = useState<string>("");
 
   // 기본 공지사항 데이터
   const defaultBulletins = [
@@ -936,6 +938,24 @@ function BulletinList({
     
     return () => unsubscribe();
   }, [mobileUser]);
+
+  // 현재 시간 업데이트 (1분마다)
+  useEffect(() => {
+    const updateTime = () => {
+      const now = new Date();
+      const hours = String(now.getHours()).padStart(2, '0');
+      const minutes = String(now.getMinutes()).padStart(2, '0');
+      setCurrentTime(`현재시간: ${hours}시 ${minutes}분`);
+    };
+
+    // 즉시 업데이트
+    updateTime();
+
+    // 1분마다 업데이트
+    const interval = setInterval(updateTime, 60000);
+
+    return () => clearInterval(interval);
+  }, []);
 
   // 체크 상태 로드 (컴포넌트 마운트 시) - 기본 공지사항 체크 상태도 로드
   useEffect(() => {
@@ -1440,8 +1460,15 @@ function BulletinList({
 
   return (
     <View style={styles.bulletinListContainer}>
-      {/* 버전 문구 추가 - 최상단 우측 */}
+      {/* 버전 문구 추가 - 최상단 양쪽 배치 */}
       <View style={styles.versionContainer}>
+        <Text 
+          style={styles.versionText}
+          includeFontPadding={false}
+          textAlignVertical="center"
+        >
+          {currentTime}
+        </Text>
         <Text 
           style={styles.versionText}
           includeFontPadding={false}
@@ -1521,7 +1548,15 @@ function BulletinList({
         </TouchableOpacity>
       </View>
 
-      <Text style={styles.title}>금일 고위험작업 안전수칙</Text>
+      <Text style={styles.title}>
+        {(() => {
+          const now = new Date();
+          const year = now.getFullYear();
+          const month = String(now.getMonth() + 1).padStart(2, '0');
+          const day = String(now.getDate()).padStart(2, '0');
+          return `${year}년 ${month}월 ${day}일 안전공지`;
+        })()}
+      </Text>
 
       {/* 기본 공지사항 표시 기능 주석처리 - 공지사항이 없을 때 기본 공지사항을 표시하지 않음 */}
       {bulletins.length > 0 ? (
@@ -2371,7 +2406,9 @@ const styles = StyleSheet.create({
   // 버전 문구 스타일
   versionContainer: {
     width: "100%",
-    alignItems: "flex-end", // 우측 정렬
+    flexDirection: "row", // 가로 배치
+    justifyContent: "space-between", // 양쪽 정렬
+    alignItems: "center", // 세로 중앙 정렬
     paddingHorizontal: 5,
     paddingTop: 4, // 상단 여백 추가
     marginBottom: 10,
