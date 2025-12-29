@@ -9,9 +9,9 @@ import * as functions from "firebase-functions";
 import * as admin from "firebase-admin";
 import { FieldValue } from "firebase-admin/firestore";
 import { getStorage } from "firebase-admin/storage";
-import * as XLSX from "xlsx";
 // cors는 lazy loading으로 변경 (배포 타임아웃 방지)
 // GoogleGenerativeAI는 lazy loading으로 변경 (배포 타임아웃 방지)
+// XLSX는 lazy loading으로 변경 (배포 타임아웃 방지)
 
 // ============================================================================
 // [Critical Fix] Google Cloud 권장: Standard Global Initialization
@@ -1173,7 +1173,8 @@ async function backupAttendanceDataToExcel() {
       });
     });
 
-    // 3. 엑셀 파일 생성
+    // 3. 엑셀 파일 생성 (XLSX lazy loading - 배포 타임아웃 방지)
+    const XLSX = require("xlsx");
     const worksheet = XLSX.utils.json_to_sheet(attendanceData);
     const workbook = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(workbook, worksheet, "출석데이터");

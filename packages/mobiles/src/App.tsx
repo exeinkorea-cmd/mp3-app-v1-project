@@ -563,7 +563,7 @@ function SignInForm() {
             onPress={handleCompanySelect}
           >
             <Text style={styles.departmentButtonText}>
-              {selectedCompanyName || "회사 선택"}
+              {selectedCompanyName || "회사"}
             </Text>
           </TouchableOpacity>
           {isCompanyDropdownOpen && companiesWithOther.length > 0 && (
@@ -603,7 +603,7 @@ function SignInForm() {
               onPress={handleTeamSelect}
             >
               <Text style={styles.departmentButtonText}>
-                {selectedTeamName || "팀 선택"}
+                {selectedTeamName || "직종"}
               </Text>
             </TouchableOpacity>
             {isTeamDropdownOpen && teamsInCompany.length > 0 && (
