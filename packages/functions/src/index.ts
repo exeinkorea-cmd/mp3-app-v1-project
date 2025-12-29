@@ -195,12 +195,14 @@ async function performDailyReset(): Promise<void> {
           const data = doc.data();
           
           // emergencyAlertId 필드가 존재하면 무조건 삭제 (화재 공지)
-          // in 연산자로 필드 존재 여부 확인 (타입, 값 무관)
-          if ("emergencyAlertId" in data) {
+          // 가장 확실한 방법: in 연산자와 undefined 체크 모두 사용
+          if (("emergencyAlertId" in data) || (data.emergencyAlertId !== undefined)) {
             logger.info(
               `🔥 [performDailyReset] 화재 공지 삭제: ${doc.id}, ` +
               `emergencyAlertId: ${data.emergencyAlertId}, ` +
-              `type: ${typeof data.emergencyAlertId}`
+              `type: ${typeof data.emergencyAlertId}, ` +
+              `in operator: ${"emergencyAlertId" in data}, ` +
+              `undefined check: ${data.emergencyAlertId !== undefined}`
             );
             
             batch.delete(doc.ref);
@@ -379,12 +381,14 @@ export const manualResetData = onCall(
             const data = doc.data();
             
             // emergencyAlertId 필드가 존재하면 무조건 삭제 (화재 공지)
-            // in 연산자로 필드 존재 여부 확인 (타입, 값 무관)
-            if ("emergencyAlertId" in data) {
+            // 가장 확실한 방법: in 연산자와 undefined 체크 모두 사용
+            if (("emergencyAlertId" in data) || (data.emergencyAlertId !== undefined)) {
               logger.info(
                 `🔥 [manualResetData] 화재 공지 삭제: ${doc.id}, ` +
                 `emergencyAlertId: ${data.emergencyAlertId}, ` +
-                `type: ${typeof data.emergencyAlertId}`
+                `type: ${typeof data.emergencyAlertId}, ` +
+                `in operator: ${"emergencyAlertId" in data}, ` +
+                `undefined check: ${data.emergencyAlertId !== undefined}`
               );
               
               batch.delete(doc.ref);
