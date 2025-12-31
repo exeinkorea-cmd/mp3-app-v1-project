@@ -1,0 +1,1129 @@
+================================================================================
+MP3 App V1 Project - 프로젝트 구조 및 로직 분석 문서
+작성일: 2025-12-31
+================================================================================
+
+## 1. 프로젝트 개요
+
+본 프로젝트는 건설 현장 업무 관리 및 안전 공지 전달을 위한 통합 시스템입니다.
+모노레포 구조로 구성되어 있으며, 웹 CMS(관리자), 모바일 앱(근로자), 서버 함수(Firebase Functions)로 구성됩니다.
+
+### 기술 스택
+- **웹 CMS**: React 19, TypeScript 5, Firebase SDK
+- **모바일 앱**: Expo 52, React Native 0.76, TypeScript 5
+- **서버**: Firebase Cloud Functions (Node.js, TypeScript)
+- **데이터베이스**: Cloud Firestore
+- **인증**: Firebase Authentication (익명 인증)
+- **스토리지**: Firebase Storage (출석 데이터 백업용)
+- **호스팅**: Firebase Hosting (웹 CMS)
+
+================================================================================
+## 2. 패키지 구조 및 기능
+
+### 2.1 packages/common (공통 라이브러리)
+
+**목적**: 모든 패키지에서 공유하는 타입 정의 및 디자인 토큰
+
+**주요 파일**:
+- `src/types.ts`: BaseDepartment 인터페이스 (회사/팀 구조 정의)
+- `src/designTokens/`: 플랫폼별 디자인 토큰 (색상, 간격, 둥근 모서리 등)
+
+**타입 정의**:
+```typescript
+interface BaseDepartment {
+  id: string;
+  name: string;
+  type: 'company' | 'team';
+  parentId?: string; // 팀의 경우 소속 업체 ID
+}
+```
+
+**디자인 토큰**:
+- BaseDesignTokens: 모든 플랫폼 공통
+- MobileDesignTokens: 모바일 전용 (React Native)
+- WebDesignTokens: 웹 전용 (React)
+
+================================================================================
+### 2.2 packages/functions (Firebase Cloud Functions)
+
+**목적**: 서버 사이드 비즈니스 로직 처리
+
+**주요 기능**:
+
+#### 2.2.1 번역 기능
+- `testTranslateV2`: Google Cloud Translate API를 사용한 텍스트 번역
+  - 대상 언어: 영어(en), 중국어(zh), 러시아어(ru), 베트남어(vi)
+  - CORS 지원
+
+#### 2.2.2 데이터 초기화 및 관리
+
+**일일 자동 초기화** (`dailyResetAt1AM`):
+- 실행 시간: 매일 새벽 1시 (한국시간, UTC+9)
+- 기능:
+  1. authCheckIns 컬렉션 전체 삭제 (출석 데이터 초기화)
+  2. bulletins 컬렉션 조건부 삭제:
+     - isPersistent=true인 공지는 보존
+     - emergencyAlertId가 있는 화재 공지는 삭제
+     - isWeatherAlert=true인 날씨 경고는 삭제
+  3. 전체 삭제 컬렉션: emergencyAlerts, checkoutPrompts, siteStatusLogs, teamRequests
+
+**수동 데이터 초기화** (`manualResetData`):
+- 웹 CMS에서 관리자가 호출
+- 커뮤니케이션 데이터만 삭제 (공지, 알림, 메시지, 요청)
+- 보존: isPersistent=true 공지, departments 컬렉션, authCheckIns 컬렉션
+
+**강제 로그아웃** (`manualRevokeSessions`):
+- 전체 사용자 퇴근 처리
+- authCheckIns의 모든 활성 사용자에 checkOutTime 설정 및 location 삭제
+- (기존 방식: 문서 삭제 → 현재 방식: 퇴근 처리로 변경)
+
+**기타 소속 강제 로그아웃** (`manualRevokeOthersSessions`):
+- "기타" 소속 사용자만 대상으로 퇴근 처리
+
+**개별 사용자 로그아웃** (`revokeUserSession`):
+- 특정 전화번호를 가진 사용자의 퇴근 처리
+
+#### 2.2.3 출석 상태 체크 및 퇴근 확인
+
+**스마트 퇴근 체크** (스케줄 함수):
+- `checkAttendanceStatus1630`: 매일 16:30 실행
+- `checkAttendanceStatus1700`: 매일 17:00 실행
+- `checkAttendanceStatus1730`: 매일 17:30 실행
+- `checkAttendanceStatus1800`: 매일 18:00 실행
+
+**로직** (`checkAttendanceStatus` 내부 함수):
+1. Firestore에서 현장 설정 가져오기 (settings/site_config)
+   - center: 현장 중심 좌표
+   - allowedRadiusMeters: 허용 반경 (미터)
+
+2. 활성 사용자 조회 (checkOutTime이 없는 사용자)
+
+3. 각 사용자의 GPS 위치를 현장 중심과 비교 (Haversine 공식)
+   - 현장 내부 사용자: siteStatusLogs에 기록
+   - 현장 외부 사용자: checkoutPrompts에 퇴근 확인 알림 생성
+   - 30분 이상 현장 외부에 있는 사용자: 자동 퇴근 처리 (checkOutTime 설정 + location 삭제)
+
+#### 2.2.4 GPS 확인 및 백업
+
+**전체 근로자 GPS 확인** (`checkAllWorkersGPSAt1PM`):
+- 실행 시간: 매일 13:00 (한국시간)
+- 활성 사용자의 GPS 위치 확인
+- 2시간 이상 업데이트되지 않은 위치 감지
+- siteStatusLogs에 결과 기록
+
+**출석 데이터 백업**:
+- `backupAttendanceDataAt1050`: 매일 10:50 실행
+- `backupAttendanceDataAt1350`: 매일 13:50 실행
+- 기능 (`backupAttendanceDataToExcel`):
+  1. authCheckIns 컬렉션 데이터 조회
+  2. XLSX 라이브러리로 엑셀 파일 생성
+  3. Firebase Storage에 업로드
+  4. 저장 경로: attendance-backups/attendance_{날짜}_{시간}.xlsx
+
+#### 2.2.5 AI 챗봇 기능
+
+**출석 쿼리 분석** (`analyzeAttendanceQuery`):
+- Gemini 2.0 Flash 모델 사용
+- 사용자 질문을 분석하여 Firestore 쿼리 파라미터 생성
+- 응답 형식:
+  ```json
+  {
+    "columns": ["userName", "department", "timestamp"],
+    "filter": { "department": "삼성물산" },
+    "sortBy": "timestamp",
+    "sortOrder": "desc",
+    "message": "삼성물산 직원들의 출근 기록입니다."
+  }
+  ```
+- 시간 필터링 지원: "before:09:00", "after:09:00", "09:00-12:00" 등
+
+**공지 조회 챗봇** (`analyzeNoticeStatusQuery`):
+- 이름/회사명/팀명으로 검색하여 공지 내용과 확인 여부 조회
+- 마크다운 테이블 형식으로 응답
+
+#### 2.2.6 긴급 알림 처리
+
+**화재 공지 자동 생성** (`onEmergencyAlertCreated`):
+- 트리거: emergencyAlerts 컬렉션에 "fire" 타입 문서 생성 시
+- 기능:
+  - 다국어 긴급 공지사항 생성 (bulletins 컬렉션)
+  - emergencyAlertId 필드로 원본 알림과 연결
+  - isPersistent=true로 설정하여 상단 고정
+
+#### 2.2.7 날씨 경고 시스템
+
+**날씨 체크 및 경고 발송** (`checkWeatherAndSendAlert`):
+- 실행 시간: 매시간 정각
+- 로직:
+  1. OpenWeatherMap API로 현장 위치의 날씨 데이터 조회
+  2. 체감온도(feels_like) 확인
+  3. 온도 범위별 경고 메시지 생성:
+     - 폭염: ≥38°C (긴급), 35-37°C (경고), 33-34°C (주의), 31-32°C (주의보)
+     - 한파: ≤-12°C (주의보), -11~-6°C (관심)
+  4. 다국어 번역 포함 (한국어, 영어, 중국어, 베트남어, 러시아어)
+  5. 중복 방지: 오늘 이미 같은 경고를 발송했으면 건너뜀
+  6. bulletins 컬렉션에 isWeatherAlert=true로 저장
+
+================================================================================
+### 2.3 packages/web-cms (웹 관리자 인터페이스)
+
+**목적**: 현장 관리자가 공지사항 작성, 출석 관리, 통계 확인 등을 수행하는 웹 애플리케이션
+
+**주요 컴포넌트**:
+- `SignInForm`: 관리자 로그인 (Firebase Auth)
+- `BulletinDashboard`: 공지사항 작성 및 관리
+- `AttendanceList`: 출석 목록 조회 및 검색
+- `StatsCards`: 통계 카드 (활성 사용자 수, 공지 수 등)
+- `TeamRequestList`: 소속 추가 요청 목록 및 승인/거부
+- `DashboardHeader`: 로그아웃, 데이터 초기화, 강제 로그아웃 버튼
+
+**주요 기능**:
+
+#### 2.3.1 공지사항 관리
+- 공지사항 작성 (제목, 내용)
+- 다국어 번역 (서버 함수 호출)
+- 대상 선택: 전체 / 특정 회사 / 특정 팀
+- 지속 공지 설정 (isPersistent)
+- 공지사항 목록 조회 및 실시간 업데이트
+
+#### 2.3.2 출석 관리
+- 출석 목록 조회 (실시간)
+- AI 챗봇을 통한 출석 데이터 검색
+- 공지 확인 여부 조회
+
+#### 2.3.3 시스템 관리
+- 데이터 초기화 (manualResetData 호출)
+- 전체 강제 로그아웃 (manualRevokeSessions 호출)
+- 기타 소속 강제 로그아웃 (manualRevokeOthersSessions 호출)
+
+#### 2.3.4 알림 모달
+- 화재 알림 모달 (emergencyAlerts/fire 감지)
+- 해피콜 요청 모달 (emergencyAlerts/happy_call 감지)
+- 날씨 경고 모달 (bulletins/isWeatherAlert 감지)
+- 소속 추가 요청 모달 (teamRequests/pending 감지)
+- 현장 상태 로그 모달 (siteStatusLogs 신규 로그 감지)
+
+================================================================================
+### 2.4 packages/mobiles (모바일 앱)
+
+**목적**: 현장 근로자가 출근, 공지 확인, 긴급 알림 신고 등을 수행하는 모바일 애플리케이션
+
+**주요 기능**:
+
+#### 2.4.1 로그인 및 출근 처리
+
+**SignInForm 컴포넌트**:
+1. 사용자 정보 입력:
+   - 이름, 전화번호
+   - 소속 선택 (회사 → 팀)
+   - "기타" 옵션 지원 (teamRequests에 요청 생성)
+
+2. GPS 권한 요청 및 위치 확인:
+   - expo-location으로 현재 위치 조회
+   - 현장 설정(settings/site_config)과 비교하여 반경 체크
+   - 범위 밖이면 로그인 차단
+
+3. Firebase Auth 익명 로그인
+
+4. 출석 데이터 생성 (authCheckIns 컬렉션):
+   - phoneNumber, userName, department
+   - timestamp (서버 타임스탬프)
+   - location (GPS 좌표)
+   - highRiskWork (고위험작업 제목, 기기 언어 설정 기반)
+
+5. 입력 정보 저장 (AsyncStorage):
+   - @mobile_user: 현재 로그인된 사용자 정보
+   - @remembered_user_inputs: 재로그인 시 자동 채우기용
+
+#### 2.4.2 공지사항 확인
+
+**BulletinList 컴포넌트**:
+- 실시간 공지사항 조회 (Firestore onSnapshot)
+- 다국어 지원 (한국어, 중국어, 베트남어, 러시아어)
+- 공지 필터링:
+  - targetType="all": 모든 사용자
+  - targetType="company": 특정 회사만
+  - targetType="team": 특정 팀만
+- 공지 확인 체크박스:
+  - GPS 위치 확인 (현장 반경 체크)
+  - authCheckIns의 noticeHistory 업데이트
+  - AsyncStorage에 체크 상태 저장
+- 새 공지 도착 시 알림 소리 재생:
+  - 화재/날씨 경고: fire_alert_sound.wav + 진동
+  - 일반 공지: notification_sound.wav
+
+#### 2.4.3 긴급 버튼
+
+**화재 버튼**:
+- 119 전화 연결
+- 현재 위치와 함께 emergencyAlerts 컬렉션에 "fire" 타입 문서 생성
+- 서버 함수에서 자동으로 긴급 공지사항 생성
+
+**요청 버튼** (해피콜):
+- 02-2154-9717 전화 연결
+- emergencyAlerts 컬렉션에 "happy_call" 타입 문서 생성
+
+**퇴근 버튼**:
+- revokeUserSession 서버 함수 호출
+- Firebase Auth 로그아웃
+
+#### 2.4.4 자동 로그아웃 감지
+
+**세 가지 방식의 로그아웃 감지**:
+
+1. **토큰 만료 감지** (onIdTokenChanged):
+   - 서버에서 토큰이 revoke되면 자동 로그아웃
+   - 세션 만료 시 강제 로그아웃
+
+2. **출석 데이터 변경 감지** (onSnapshot):
+   - authCheckIns에서 checkOutTime이 설정되면 로그아웃
+   - 문서가 삭제되면 로그아웃 (강제 로그아웃)
+
+3. **위치 업데이트**:
+   - (향후 구현 가능) 주기적으로 GPS 위치 업데이트
+
+================================================================================
+## 3. 데이터베이스 구조 (Firestore)
+
+### 3.1 컬렉션 구조
+
+#### departments (소속 정보)
+```typescript
+{
+  id: string;          // 문서 ID
+  name: string;        // 회사명 또는 팀명
+  type: "company" | "team";
+  parentId?: string;   // 팀의 경우 소속 업체 ID
+  createdAt: Timestamp;
+}
+```
+- **접근 규칙**: 모든 사용자 읽기 가능, 인증된 사용자만 쓰기 가능
+- **용도**: 로그인 시 소속 선택, 공지사항 대상 선택
+
+#### settings (현장 설정)
+```typescript
+{
+  id: "site_config";   // 고정 문서 ID
+  center: {
+    latitude: number;
+    longitude: number;
+  };
+  allowedRadiusMeters: number;  // 허용 반경 (미터)
+  autoGpsCheckEnabled?: boolean; // GPS 자동 확인 활성화 여부
+  autoBackupEnabled?: boolean;   // 자동 백업 활성화 여부
+  backupFolderPath?: string;     // 백업 폴더 경로
+}
+```
+- **접근 규칙**: 모든 사용자 읽기 가능, 인증된 사용자만 쓰기 가능
+- **용도**: GPS 반경 체크, 스케줄 함수 설정
+
+#### authCheckIns (출석 데이터)
+```typescript
+{
+  id: string;                    // 문서 ID
+  phoneNumber: string;           // 사용자 식별용 (필수)
+  userName: string;              // 표시용 이름
+  department: string;            // "회사명 - 팀명" 형식
+  userId?: string;               // Firebase Auth UID
+  timestamp: Timestamp;          // 출근 시간 (서버 타임스탬프)
+  checkOutTime?: Timestamp;      // 퇴근 시간 (서버 타임스탬프)
+  location?: {                   // GPS 위치
+    latitude: number;
+    longitude: number;
+  };
+  locationUpdatedAt?: Timestamp; // 위치 업데이트 시간
+  highRiskWork?: string;         // 고위험작업 제목
+  highRiskWorkUpdatedAt?: Timestamp;
+  noticeConfirmed?: boolean;     // (deprecated) 공지 확인 여부
+  noticeHistory?: Array<{        // 공지 확인 이력
+    id: string;                  // bulletin ID
+    title: string;               // 공지 제목
+    confirmed: boolean;          // 확인 여부
+    sentAt: Timestamp;           // 발송 시간
+  }>;
+  lastCheckoutPrompt?: {         // 마지막 퇴근 확인 알림
+    timestamp: Timestamp;
+    checkTime: string;
+  };
+}
+```
+- **접근 규칙**: 인증된 사용자만 읽기/쓰기 가능
+- **용도**: 출근/퇴근 기록, GPS 추적, 공지 확인 이력
+- **인덱스**: phoneNumber, timestamp (복합 인덱스 필요)
+
+#### bulletins (공지사항)
+```typescript
+{
+  id: string;                    // 문서 ID
+  title: string;                 // 제목 (한국어)
+  originalText: string;          // 내용 (한국어)
+  titleTranslations?: Record<string, string>; // 다국어 제목
+  contentTranslations?: Record<string, string>; // 다국어 내용
+  authorEmail: string;           // 작성자 이메일
+  department?: string;           // (하위 호환성) 작성자 소속
+  targetType: "all" | "company" | "team"; // 대상 타입
+  targetValue?: string | null;   // 단일 대상 ID
+  targetValues?: string[];       // 여러 대상 ID 배열
+  isPersistent: boolean;         // 지속 공지 여부 (일일 초기화 시 보존)
+  expiryDate?: Timestamp;        // 만료일
+  createdAt: Timestamp;          // 생성 시간 (서버 타임스탬프)
+  createdBy?: string;            // 생성자 (system 또는 사용자)
+  status?: string;               // 상태
+  isWeatherAlert?: boolean;      // 날씨 경고 여부
+  emergencyAlertId?: string;     // 긴급 알림 ID (화재 공지 연결)
+  weatherAlertType?: "heat" | "cold"; // 날씨 경고 타입
+}
+```
+- **접근 규칙**: 인증된 사용자만 읽기/쓰기 가능
+- **용도**: 안전 공지, 긴급 알림, 날씨 경고 전달
+- **인덱스**: createdAt (desc), isWeatherAlert, emergencyAlertId
+
+#### emergencyAlerts (긴급 알림)
+```typescript
+{
+  id: string;                    // 문서 ID
+  type: "fire" | "suggestion" | "happy_call"; // 알림 타입
+  userName?: string;             // 신고자 이름
+  department?: string;           // 신고자 소속
+  phoneNumber?: string;          // 신고자 전화번호
+  userId?: string;               // Firebase Auth UID
+  location?: {                   // 신고 위치
+    latitude: number;
+    longitude: number;
+  };
+  timestamp: Timestamp;          // 신고 시간 (서버 타임스탬프)
+  message?: string;              // 메시지
+  translations?: Record<string, string>; // 다국어 번역
+}
+```
+- **접근 규칙**: 인증된 사용자만 읽기/쓰기 가능
+- **용도**: 화재 신고, 해피콜 요청, 제안사항
+- **인덱스**: type, timestamp (복합 인덱스 필요)
+- **트리거**: "fire" 타입 생성 시 → bulletins에 긴급 공지 자동 생성
+
+#### checkoutPrompts (퇴근 확인 알림)
+```typescript
+{
+  id: string;                    // 문서 ID
+  userId: string;                // 사용자 ID
+  userName: string;              // 사용자 이름
+  timestamp: Timestamp;          // 생성 시간 (서버 타임스탬프)
+  message: string;               // 메시지 ("퇴근 하시겠습니까?")
+  status: "pending" | "confirmed" | "dismissed"; // 상태
+  checkTime: string;             // 체크 시간 ("16:30", "17:00" 등)
+  confirmedAt?: Timestamp;       // 확인 시간
+  dismissedAt?: Timestamp;       // 거부 시간
+}
+```
+- **접근 규칙**: 인증된 사용자만 읽기/쓰기 가능
+- **용도**: 현장 외부 사용자에게 퇴근 확인 알림
+- **생성**: checkAttendanceStatus 함수에서 자동 생성
+
+#### siteStatusLogs (현장 상태 로그)
+```typescript
+{
+  id: string;                    // 문서 ID
+  checkTime: string;             // 체크 시간
+  timestamp: Timestamp;          // 기록 시간 (서버 타임스탬프)
+  status: "active" | "inactive"; // 현장 상태
+  activeUsersCount: number;      // 활성 사용자 수
+  activeUsers: string[];         // 활성 사용자 이름 배열
+  message: string;               // 메시지
+  gpsCheckResult?: {             // GPS 확인 결과 (선택)
+    usersWithoutGPS: string[];
+    usersWithOldGPS: string[];
+    totalActiveUsers: number;
+  };
+}
+```
+- **접근 규칙**: 인증된 사용자만 읽기/쓰기 가능
+- **용도**: 현장 상태 기록, GPS 확인 결과 기록
+- **생성**: checkAttendanceStatus, checkAllWorkersGPS 함수에서 자동 생성
+
+#### teamRequests (소속 추가 요청)
+```typescript
+{
+  id: string;                    // 문서 ID
+  requesterName: string;         // 요청자 이름
+  requestedTeamName: string;     // 요청한 소속명 (보통 "기타")
+  phoneNumber: string;           // 요청자 전화번호
+  status: "pending" | "approved" | "rejected"; // 상태
+  timestamp: Timestamp;          // 요청 시간 (서버 타임스탬프)
+  approvedAt?: Timestamp;        // 승인 시간
+  rejectedAt?: Timestamp;        // 거부 시간
+}
+```
+- **접근 규칙**: 인증된 사용자만 읽기/쓰기 가능
+- **용도**: "기타" 소속 사용자의 소속 추가 요청 관리
+- **생성**: 모바일 앱에서 "기타" 선택 시 자동 생성
+
+### 3.2 보안 규칙 (firestore.rules)
+
+```javascript
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // departments, settings: 모든 사용자 읽기 가능 (로그인 전에도 필요)
+    match /departments/{document} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    match /settings/{document} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
+    
+    // 나머지 컬렉션: 인증된 사용자만 읽기/쓰기 가능
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+```
+
+================================================================================
+## 4. 서버 구성 및 배포
+
+### 4.1 Firebase 프로젝트 구성
+
+**firebase.json**:
+```json
+{
+  "functions": {
+    "source": "packages/functions"
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "hosting": {
+    "public": "packages/web-cms/build",
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  },
+  "emulators": {
+    "functions": { "port": 5001 },
+    "firestore": { "port": 8080 },
+    "ui": { "port": 4000 }
+  }
+}
+```
+
+### 4.2 Cloud Functions 배포
+
+**주요 함수**:
+- HTTP 함수: testTranslateV2, analyzeAttendanceQuery, analyzeNoticeStatusQuery
+- Callable 함수: manualResetData, manualRevokeSessions, manualRevokeOthersSessions, revokeUserSession
+- 스케줄 함수: dailyResetAt1AM, checkAttendanceStatus*, checkAllWorkersGPSAt1PM, backupAttendanceData*, checkWeatherAndSendAlert
+- Firestore 트리거: onEmergencyAlertCreated
+
+**배포 명령**:
+```bash
+npm run deploy:functions  # Functions만 배포
+npm run deploy:all        # Hosting + Functions 모두 배포
+```
+
+### 4.3 환경 변수
+
+**Functions 환경 변수**:
+- GEMINI_API_KEY: Gemini AI API 키
+
+**설정 방법**:
+```bash
+firebase functions:config:set gemini.api_key="your-api-key"
+```
+
+================================================================================
+## 5. 서버-클라이언트 흐름
+
+### 5.1 출근 프로세스
+
+```
+[모바일 앱]                    [Firebase]                    [서버 함수]
+     |                             |                              |
+     |-- 1. GPS 위치 확인 --------->|                              |
+     |                             |                              |
+     |-- 2. 현장 설정 조회 -------->|                              |
+     |<-- settings/site_config ----|                              |
+     |                             |                              |
+     |-- 3. 반경 체크 (클라이언트)  |                              |
+     |                             |                              |
+     |-- 4. 익명 로그인 ----------->|                              |
+     |<-- Auth Token --------------|                              |
+     |                             |                              |
+     |-- 5. 출석 데이터 저장 ------>|                              |
+     |    (authCheckIns 컬렉션)     |                              |
+     |                             |                              |
+```
+
+### 5.2 공지사항 작성 및 전달 프로세스
+
+```
+[웹 CMS]                       [Firebase]                    [서버 함수]
+     |                             |                              |
+     |-- 1. 공지 작성 ------------->|                              |
+     |    (bulletins 컬렉션)       |                              |
+     |                             |                              |
+     |-- 2. 번역 요청 ------------->|-- testTranslateV2 --------->|
+     |    (제목, 내용)              |                              |
+     |<-- 번역 결과 ---------------|<-- 다국어 번역 --------------|
+     |                             |                              |
+     |-- 3. 번역본 저장 ----------->|                              |
+     |    (titleTranslations,      |                              |
+     |     contentTranslations)    |                              |
+     |                             |                              |
+[모바일 앱]                    [Firestore]                          |
+     |                             |                              |
+     |-- 4. 실시간 조회 ----------->|                              |
+     |    (onSnapshot)             |                              |
+     |<-- 새 공지 도착 ------------|                              |
+     |                             |                              |
+     |-- 5. 공지 확인 ------------->|                              |
+     |    (GPS 확인 +              |                              |
+     |     noticeHistory 업데이트)  |                              |
+```
+
+### 5.3 화재 신고 프로세스
+
+```
+[모바일 앱]                    [Firebase]                    [서버 함수]
+     |                             |                              |
+     |-- 1. 화재 버튼 클릭          |                              |
+     |-- 2. 119 전화 연결 (Linking)|                              |
+     |                             |                              |
+     |-- 3. 긴급 알림 생성 -------->|                              |
+     |    (emergencyAlerts/fire)   |                              |
+     |                             |-- onEmergencyAlertCreated ->|
+     |                             |    (트리거)                  |
+     |                             |                              |
+     |                             |-- 4. 긴급 공지 생성 -------->|
+     |                             |    (bulletins 컬렉션)       |
+     |                             |    (emergencyAlertId 연결)   |
+     |                             |                              |
+[웹 CMS]                       [Firestore]                          |
+     |                             |                              |
+     |-- 5. 실시간 감지 ----------->|                              |
+     |    (onSnapshot)             |                              |
+     |<-- 화재 알림 모달 표시 ------|                              |
+     |                             |                              |
+[모바일 앱]                                                          |
+     |                                                              |
+     |-- 6. 실시간 감지 (onSnapshot)                               |
+     |<-- 긴급 공지 도착 + 알림 소리                                |
+```
+
+### 5.4 퇴근 확인 프로세스
+
+```
+[서버 함수]                   [Firestore]                    [모바일 앱]
+     |                             |                              |
+     |-- 1. 스케줄 실행             |                              |
+     |    (16:30, 17:00, 17:30,   |                              |
+     |     18:00)                  |                              |
+     |                             |                              |
+     |-- 2. 활성 사용자 조회 ------>|                              |
+     |    (checkOutTime 없는 사용자)|                              |
+     |                             |                              |
+     |-- 3. GPS 위치 확인           |                              |
+     |    (현장 반경 체크)          |                              |
+     |                             |                              |
+     |-- 4a. 현장 내부 사용자 ----->|                              |
+     |    → siteStatusLogs 기록    |                              |
+     |                             |                              |
+     |-- 4b. 현장 외부 사용자 ----->|                              |
+     |    → checkoutPrompts 생성   |                              |
+     |    → lastCheckoutPrompt     |                              |
+     |       업데이트               |                              |
+     |                             |                              |
+     |                             |-- 5. 실시간 감지 ----------->|
+     |                             |    (onSnapshot)              |
+     |                             |                              |
+     |-- 4c. 30분 이상 외부 ------->|                              |
+     |    → 자동 퇴근 처리          |                              |
+     |    (checkOutTime 설정 +      |                              |
+     |     location 삭제)           |                              |
+     |                             |                              |
+     |                             |-- 6. checkOutTime 변경 감지 ->|
+     |                             |                              |
+     |                             |-- 7. 자동 로그아웃 ---------->|
+```
+
+### 5.5 날씨 경고 프로세스
+
+```
+[서버 함수]                   [외부 API]                    [Firestore]
+     |                             |                              |
+     |-- 1. 매시간 실행             |                              |
+     |    (0 * * * *)              |                              |
+     |                             |                              |
+     |-- 2. 현장 설정 조회 -------->|                              |
+     |    (settings/site_config)   |                              |
+     |                             |                              |
+     |-- 3. 날씨 API 호출 --------->|-- OpenWeatherMap API -------|
+     |    (체감온도 확인)           |                              |
+     |<-- 날씨 데이터 --------------|                              |
+     |                             |                              |
+     |-- 4. 경고 메시지 생성        |                              |
+     |    (온도 범위별)             |                              |
+     |    (다국어 번역 포함)        |                              |
+     |                             |                              |
+     |-- 5. 중복 확인 ------------->|                              |
+     |    (오늘 같은 경고 발송했는지)|                              |
+     |                             |                              |
+     |-- 6. 공지 생성 ------------->|                              |
+     |    (bulletins 컬렉션)        |                              |
+     |    (isWeatherAlert=true)    |                              |
+     |                             |                              |
+[모바일 앱]                    [Firestore]                          |
+     |                             |                              |
+     |-- 7. 실시간 감지 ----------->|                              |
+     |    (onSnapshot)             |                              |
+     |<-- 날씨 경고 공지 + 알림 소리 |                              |
+```
+
+================================================================================
+## 6. 디자인 시스템
+
+### 6.1 디자인 토큰 구조
+
+**BaseDesignTokens** (공통):
+- 색상: primary, secondary, background, text, border, status
+- 간격: xs(4), sm(8), md(16), lg(24), xl(32), xxl(48)
+- 둥근 모서리: sm(4), md(8), lg(10), xl(16), full(9999)
+- Z-index: dropdown(100), modal(50), header(10), tooltip(1000)
+
+**주요 색상**:
+- Primary: #030213 (검정)
+- Secondary: #10B981 (녹색 - GS 로고 색상)
+- Background: #FFFFFF (흰색)
+- Text Primary: #030213
+- Status:
+  - Success: 배경 #D1FAE5, 텍스트 #065F46
+  - Error: 배경 #FEE2E2, 텍스트 #991B1B
+  - Warning: 배경 #FEF3C7, 텍스트 #92400E
+  - Info: 배경 #DBEAFE, 텍스트 #1E40AF
+
+**플랫폼별 확장**:
+- MobileDesignTokens: React Native 전용 스타일
+- WebDesignTokens: React 웹 전용 스타일
+
+### 6.2 모바일 앱 UI 구조
+
+**메인 화면**:
+- 상단: 현재시간, 버전 정보
+- 헤더 버튼: 언어 선택, 화재, 요청, 퇴근
+- 공지사항 목록: 제목, 내용, 확인 체크박스
+- 하단: 로고, 현장명
+
+**로그인 화면**:
+- 로고
+- 입력 필드: 이름, 전화번호
+- 드롭다운: 회사 선택, 팀 선택
+- 개인정보처리방침 동의 체크박스
+- 출근하기 버튼
+- 하단: 저작권 문구
+
+**스타일 특징**:
+- GS 건설 브랜드 색상 (녹색) 활용
+- 간결하고 직관적인 UI
+- 다국어 지원 (한국어, 중국어, 베트남어, 러시아어)
+- 긴급 알림 시 빨간색 테두리 강조
+
+### 6.3 웹 CMS UI 구조
+
+**대시보드**:
+- 상단: 헤더 (로그아웃, 데이터 초기화, 강제 로그아웃 버튼)
+- 통계 카드: 활성 사용자 수, 공지 수, 요청 수
+- 공지사항 작성 섹션
+- 출석 목록
+- 소속 추가 요청 목록
+- AI 챗봇 (출석 검색)
+
+**스타일 특징**:
+- 반응형 디자인
+- Material Design 기반
+- 실시간 데이터 업데이트
+- 모달을 통한 알림 표시
+
+================================================================================
+## 7. 향후 확장 가능성 (Future Architecture)
+
+### 7.1 IoT 확장 (future_iot.ts)
+
+**HybridLocation**:
+- GPS, Beacon, WiFi RTT를 통한 하이브리드 위치 추적
+- 실내/지하 층수 판별
+- 통신 음영 지역(Dead Zone) 모드
+
+**IotSensorSignal**:
+- BLE Beacon 신호 감지
+- RSSI 기반 거리 계산
+- 위험 기계(지게차 등) 부착 센서 지원
+
+**OfflineSafetyMessage**:
+- 통신 단절 시 P2P 메쉬 통신
+- SOS, 대피 메시지 전달
+
+### 7.2 네트워크 아키텍처 확장 (future_network_architecture.ts)
+
+**NetworkMode**:
+- CELLULAR_5G_LTE: 일반 통신
+- SITE_WIFI_EXTENDER: 지하 현장 유선 확장 공유기
+- OFFLINE_MESH_P2P: 통신 두절 시 기기 간 직접 연결
+- DISCONNECTED: 고립 위험 상태
+
+**SiteWifiInfo**:
+- 현장 와이파이 정보로 위치 추정
+- 공식 AP 검증
+- 구역 ID 매핑
+
+**NetworkManager**:
+- 자동 네트워크 모드 전환
+- 메쉬 네트워크 활성화
+- WiFi 기반 위치 추정
+
+================================================================================
+## 8. 주요 알고리즘 및 로직
+
+### 8.1 Haversine 공식 (거리 계산)
+
+```typescript
+const calculateDistance = (lat1, lon1, lat2, lon2): number => {
+  const R = 6371000; // 지구 반경 (미터)
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) *
+      Math.cos((lat2 * Math.PI) / 180) *
+      Math.sin(dLon / 2) *
+      Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c; // 미터 단위
+};
+```
+
+**용도**:
+- 로그인 시 현장 반경 체크
+- 퇴근 확인 시 현장 내/외부 판별
+- 공지 확인 시 현장 반경 체크
+
+### 8.2 배치 처리 로직
+
+**최대 배치 크기**: 400개 (Firestore 제한)
+
+**패턴**:
+```typescript
+const MAX_BATCH_SIZE = 400;
+const batches: Promise<any>[] = [];
+let batch = db.batch();
+let count = 0;
+
+for (const doc of snapshot.docs) {
+  batch.delete(doc.ref); // 또는 update, set
+  count++;
+  if (count >= MAX_BATCH_SIZE) {
+    batches.push(batch.commit());
+    batch = db.batch();
+    count = 0;
+  }
+}
+if (count > 0) {
+  batches.push(batch.commit());
+}
+await Promise.all(batches); // 병렬 실행
+```
+
+**용도**:
+- 일일 초기화 (대량 삭제)
+- 데이터 초기화 (대량 삭제)
+- 강제 로그아웃 (대량 업데이트)
+
+### 8.3 실시간 감지 로직
+
+**중복 방지 패턴**:
+```typescript
+let isInitialLoad = true;
+const previousIds = new Set<string>();
+
+const unsubscribe = onSnapshot(query, (snapshot) => {
+  if (isInitialLoad) {
+    snapshot.docs.forEach((doc) => {
+      previousIds.add(doc.id);
+    });
+    isInitialLoad = false;
+    return; // 초기 로드는 처리하지 않음
+  }
+  
+  snapshot.docChanges().forEach((change) => {
+    if (change.type === "added" && !previousIds.has(change.doc.id)) {
+      // 새로 추가된 문서만 처리
+      handleNewDocument(change.doc);
+      previousIds.add(change.doc.id);
+    }
+  });
+});
+```
+
+**용도**:
+- 새 공지 도착 시 알림 소리 재생
+- 화재 알림 모달 표시
+- 퇴근 확인 알림 표시
+- 자동 로그아웃 감지
+
+### 8.4 다국어 지원 로직
+
+**언어 감지** (모바일):
+1. Intl API 사용 (가장 안전)
+2. NativeModules 사용 (iOS/Android)
+3. 기본값: 한국어
+
+**번역 저장 구조**:
+```typescript
+{
+  title: "한국어 제목",
+  titleTranslations: {
+    ko: "한국어 제목",
+    en: "English Title",
+    zh: "中文标题",
+    vi: "Tiêu đề tiếng Việt",
+    ru: "Русский заголовок"
+  },
+  contentTranslations: { ... }
+}
+```
+
+**번역 선택**:
+```typescript
+const getDisplayText = (item: Bulletin, selectedLanguage: string): string => {
+  const langCode = languageMap[selectedLanguage];
+  if (selectedLanguage === "한국어") {
+    return item.originalText;
+  }
+  return item.contentTranslations?.[langCode] || item.originalText;
+};
+```
+
+================================================================================
+## 9. 보안 및 개인정보 보호
+
+### 9.1 인증 방식
+
+**모바일 앱**:
+- Firebase Authentication 익명 로그인
+- GPS 위치 기반 현장 인증 (추가 검증)
+- 전화번호 기반 사용자 식별
+
+**웹 CMS**:
+- Firebase Authentication 이메일/비밀번호 로그인
+- 관리자 권한 필요
+
+### 9.2 개인정보 수집 및 보관
+
+**수집 항목**:
+- 필수: 이름, 전화번호, 소속, GPS 위치
+- 선택: 고위험작업 정보
+
+**보관 기간**:
+- 일일 출퇴근 기록: 매일 자동 삭제 (새벽 1시)
+- 출석 데이터 백업: Firebase Storage에 엑셀 파일로 저장 (선택적)
+- 지속 공지 확인 이력: 보존 (isPersistent=true인 공지)
+
+**GPS 수집 목적**:
+- 현장 내 출퇴근 처리
+- 안전 기능 (사고 발생 시 위치 확인)
+- 퇴근 시간 이후 현장 체류 감지
+
+### 9.3 데이터 초기화 정책
+
+**일일 자동 초기화** (새벽 1시):
+- authCheckIns: 전체 삭제
+- bulletins: 조건부 삭제 (isPersistent=false만)
+- emergencyAlerts: 전체 삭제
+- checkoutPrompts: 전체 삭제
+- siteStatusLogs: 전체 삭제
+- teamRequests: 전체 삭제
+
+**보존 데이터**:
+- departments: 조직 정보 (영구 보존)
+- settings: 현장 설정 (영구 보존)
+- bulletins (isPersistent=true): 지속 공지 (보존)
+
+================================================================================
+## 10. 성능 최적화
+
+### 10.1 Lazy Loading
+
+**Functions에서**:
+- cors: 동적 import (배포 타임아웃 방지)
+- GoogleGenerativeAI: 동적 import
+- XLSX: 동적 import
+
+**패턴**:
+```typescript
+let corsHandlerInstance: any | null = null;
+function getCorsHandler() {
+  if (!corsHandlerInstance) {
+    const corsModule = require("cors");
+    corsHandlerInstance = corsModule({ ... });
+  }
+  return corsHandlerInstance;
+}
+```
+
+### 10.2 Firestore 쿼리 최적화
+
+**인덱스 필수**:
+- authCheckIns: phoneNumber + timestamp (복합 인덱스)
+- bulletins: createdAt (desc), isWeatherAlert, emergencyAlertId
+- emergencyAlerts: type + timestamp (복합 인덱스)
+
+**쿼리 제한**:
+- orderBy는 인덱스 필요
+- where + orderBy 조합 시 복합 인덱스 필요
+
+### 10.3 실시간 업데이트 최적화
+
+**onSnapshot 사용**:
+- 초기 로드 시 모든 문서 처리
+- 이후 변경사항만 처리 (docChanges 사용)
+- 중복 방지 로직으로 불필요한 처리 방지
+
+**컴포넌트 언마운트 시 정리**:
+```typescript
+useEffect(() => {
+  const unsubscribe = onSnapshot(query, callback);
+  return () => unsubscribe(); // 정리 필수
+}, [dependencies]);
+```
+
+================================================================================
+## 11. 배포 및 운영
+
+### 11.1 빌드 및 배포 스크립트
+
+**루트 package.json**:
+```json
+{
+  "build:common": "npm run build -w @mp3/common",
+  "start:web": "npm run start -w web-cms",
+  "start:mobile": "npm run start -w mobiles",
+  "serve:functions": "npm run build -w functions && npx firebase emulators:start",
+  "build:web": "npm run build -w web-cms",
+  "deploy:hosting": "npm run build:web && npx firebase deploy --only hosting",
+  "deploy:functions": "npm run build -w functions && npx firebase deploy --only functions",
+  "deploy:all": "npm run deploy:hosting && npm run deploy:functions"
+}
+```
+
+### 11.2 에뮬레이터 사용
+
+**로컬 개발**:
+```bash
+npm run serve:functions  # Functions + Firestore 에뮬레이터
+# 웹: http://localhost:4000 (에뮬레이터 UI)
+# Functions: http://127.0.0.1:5001
+# Firestore: http://127.0.0.1:8080
+```
+
+**웹 CMS 연결**:
+- localhost에서 실행 시 자동으로 Functions 에뮬레이터 연결
+- `connectFunctionsEmulator(functions, "127.0.0.1", 5001)`
+
+### 11.3 환경 변수 관리
+
+**Firebase Functions**:
+```bash
+firebase functions:config:set gemini.api_key="your-key"
+firebase functions:config:get
+```
+
+**접근**:
+```typescript
+const apiKey = process.env.GEMINI_API_KEY;
+```
+
+**모바일/웹**:
+- .env 파일 사용 (gitignore에 포함)
+- .env.example 템플릿 제공
+- app.config.ts (모바일) 또는 환경 변수 (웹)로 주입
+
+================================================================================
+## 12. 에러 처리 및 로깅
+
+### 12.1 에러 리포트 (모바일)
+
+**전역 에러 핸들러**:
+```typescript
+ErrorUtils.setGlobalHandler((error: Error, isFatal?: boolean) => {
+  sendGlobalErrorReport(error, isFatal);
+  // 원래 핸들러 호출
+});
+```
+
+**에러 리포트 구조**:
+- errorReports 컬렉션에 저장
+- errorMessage, errorStack, isFatal, userInfo, platform, timestamp
+
+### 12.2 서버 로깅
+
+**Firebase Functions Logger**:
+```typescript
+import * as logger from "firebase-functions/logger";
+
+logger.info("정보 메시지");
+logger.warn("경고 메시지");
+logger.error("에러 메시지", error);
+```
+
+**로그 확인**:
+- Firebase Console → Functions → Logs
+- Cloud Logging에서 상세 확인 가능
+
+================================================================================
+## 13. 향후 개선 사항
+
+### 13.1 기능 개선
+- [ ] IoT 센서 통합 (BLE Beacon, WiFi RTT)
+- [ ] 오프라인 모드 지원 (P2P 메쉬 통신)
+- [ ] 실내 측위 (지하/건물 내 층수 판별)
+- [ ] 지게차 등 위험 기계 센서 연동
+- [ ] 통신 음영 지역 대응 (WiFi 확장, 메쉬 네트워크)
+
+### 13.2 성능 개선
+- [ ] Firestore 쿼리 최적화 (인덱스 추가)
+- [ ] 이미지 최적화 (공지사항 첨부 이미지)
+- [ ] 번역 결과 캐싱
+
+### 13.3 UX 개선
+- [ ] 공지사항 이미지 첨부
+- [ ] 푸시 알림 개선
+- [ ] 다크 모드 지원
+- [ ] 접근성 개선 (스크린 리더 지원)
+
+================================================================================
+## 14. 참고 자료
+
+### 14.1 문서 파일
+- README.md: 설치 및 실행 가이드
+- INSTALL.md: 상세 설치 방법
+- VERSION_LOCK.md: 버전 고정 정보
+
+### 14.2 주요 라이브러리
+- Firebase SDK: 인증, Firestore, Functions, Storage
+- React/React Native: UI 프레임워크
+- Expo: 모바일 개발 프레임워크
+- Google Cloud Translate: 텍스트 번역
+- Google Generative AI (Gemini): AI 챗봇
+- OpenWeatherMap API: 날씨 데이터
+- XLSX: 엑셀 파일 생성
+
+================================================================================
+문서 작성 완료: 2025-12-31
+================================================================================
+
